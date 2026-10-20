@@ -1,0 +1,1480 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="一间可以转来转去的 3D 画室：看素描、水粉、油画一步步画出来，再自己动手画一张。">
+<title>一步一步画室</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@700;900&display=swap">
+<style>
+/* 布局：全屏 3D 画室，左侧步骤卡，右侧控制台；手机上 3D 在上、卡片在下 */
+:root{
+  --ink:#16120f;          /* 夜里的画室 */
+  --panel:rgba(28,23,19,.84);
+  --panel-2:rgba(255,240,220,.06);
+  --line:rgba(255,236,210,.11);
+  --fg:#f2eadf;
+  --mute:#a99d8c;
+  --accent:#e8a63f;       /* 土黄 */
+  --accent-ink:#2b1c05;
+  --paper:#f3efe6;
+  --display:"Noto Serif SC","Songti SC","STSong",serif;
+  --body:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:dark;
+}
+html,body{height:100%}
+[hidden]{display:none!important}
+body{background:var(--ink);color:var(--fg);font-family:var(--body);overflow:hidden}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#app{position:relative;height:100%;overflow:hidden}
+#stage{position:absolute;inset:0}
+#gl{display:block;width:100%;height:100%;touch-action:none}
+#labels{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.tag{position:absolute;left:0;top:0;transform:translate(-50%,-50%);display:flex;align-items:center;gap:6px;padding:4px 10px 4px 8px;border-radius:99px;background:rgba(22,18,15,.72);border:1px solid var(--line);font-size:12px;white-space:nowrap;color:var(--mute);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);transition:opacity .3s}
+.tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--mute)}
+.tag.on{color:var(--fg);border-color:rgba(232,166,63,.5)}
+.tag.on::before{background:var(--accent);box-shadow:0 0 0 4px rgba(232,166,63,.18)}
+
+/* 画布视图 */
+#sheet{position:absolute;inset:16px 416px 16px 376px;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#sheet[hidden]{display:none!important}
+#sheetBg{position:absolute;inset:0;background:rgba(16,12,10,.55);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.paperbox{position:relative;height:100%;max-width:100%;aspect-ratio:4/5;pointer-events:auto;box-shadow:0 30px 60px rgba(0,0,0,.5),0 0 0 10px #2a211a,0 0 0 11px rgba(255,236,210,.12)}
+.paperbox canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#guide{opacity:.28;mix-blend-mode:multiply;pointer-events:none}
+#view2d.painting{cursor:none}
+#tool2d{position:absolute;left:0;top:0;width:0;height:0;pointer-events:none;z-index:3;will-change:transform}
+#tool2d .sh,#tool2d .bd{position:absolute;left:0;bottom:0;transform-origin:50% 100%}
+#tool2d .sh{border-radius:40% 40% 50% 50%/10% 10% 4% 4%;background:linear-gradient(to top,rgba(40,28,15,.55),rgba(40,28,15,.08));filter:blur(3px)}
+#tool2d .bd svg{display:block;width:100%;height:100%;overflow:visible;filter:drop-shadow(0 1px 0 rgba(0,0,0,.25))}
+
+/* 面板 */
+.ui{position:absolute;inset:0;pointer-events:none}
+.ui>*{pointer-events:auto}
+.left{position:absolute;left:max(16px,env(safe-area-inset-left,0px));top:16px;width:344px;display:flex;flex-direction:column;gap:10px;max-height:calc(100% - 32px);overflow:auto;scrollbar-width:none}
+.left::-webkit-scrollbar{display:none}
+.right{position:absolute;right:max(16px,env(safe-area-inset-right,0px));top:16px;width:384px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.brand{padding:4px 2px 2px}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;color:var(--mute)}
+h1{margin:2px 0 0;font-family:var(--display);font-weight:900;font-size:44px;line-height:1.08;color:var(--accent);letter-spacing:.04em;text-shadow:0 2px 18px rgba(0,0,0,.5)}
+.brand .sub{font-size:13px;color:var(--mute);margin-top:4px}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{padding:9px 12px}
+.stat .k{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--mute)}
+.stat .v{font-family:var(--mono);font-size:13px;color:var(--mute);font-variant-numeric:tabular-nums}
+.stat .v b{font-size:22px;color:var(--accent);font-weight:700}
+.stepcard{padding:14px 16px 14px}
+.step-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--accent);font-weight:700}
+#stepText{margin:8px 0 0;font-size:14.5px;line-height:1.75}
+#stepText b{color:var(--accent);font-weight:700}
+.tip{margin:10px 0 0;padding-top:10px;border-top:1px dashed var(--line);font-size:13px;line-height:1.65;color:var(--mute)}
+.tip span{color:var(--fg);font-weight:500}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:3px 9px 3px 4px;border-radius:99px;font-size:12px;border:1px solid var(--line);color:var(--mute);opacity:.45;transition:opacity .4s,border-color .4s}
+.chip i{width:14px;height:14px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+.chip.got{opacity:1;color:var(--fg)}
+.chip.new{border-color:var(--accent);animation:pop .9s ease}
+@keyframes pop{0%{transform:scale(.8)}50%{transform:scale(1.12)}100%{transform:scale(1)}}
+.refcard{overflow:hidden}
+.card-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--mute)}
+.card-head b{color:var(--fg);font-weight:700}
+.refview{position:relative;aspect-ratio:4/3;background:#0e0b09}
+#refgl{display:block;width:100%;height:100%}
+#refLabels{position:absolute;inset:0;pointer-events:none}
+.ann{position:absolute;transform:translate(-50%,-120%);font-size:11.5px;padding:2px 7px;border-radius:6px;background:var(--accent);color:var(--accent-ink);font-weight:700;white-space:nowrap}
+.ann.alt{background:#8fb3e0;color:#0f1a2b}
+
+.panel{padding:12px 14px 14px;display:flex;flex-direction:column;gap:12px}
+.lbl{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--mute)}
+.seg{display:flex;gap:4px;padding:4px;border-radius:11px;background:var(--panel-2)}
+.seg button{flex:1;padding:8px 6px;white-space:nowrap;border-radius:8px;font-size:13.5px;color:var(--mute);transition:background .2s,color .2s}
+.seg button[aria-pressed="true"]{background:var(--paper);color:#241a10;font-weight:700}
+.nav{display:flex;align-items:center;gap:10px}
+.ib{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);transition:background .2s}
+.ib:hover{background:rgba(255,240,220,.12)}
+.ib svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ib.play{background:rgba(232,166,63,.16);border-color:rgba(232,166,63,.4);color:var(--accent)}
+.ib[aria-pressed="true"]{background:rgba(232,166,63,.2);color:var(--accent);border-color:rgba(232,166,63,.45)}
+.nav-mid{flex:1;min-width:0}
+#navTitle{font-family:var(--display);font-size:19px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#navSub{font-family:var(--mono);font-size:11px;color:var(--mute);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ticks{display:flex;justify-content:space-between;padding:0 3px;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.ticks button{width:18px;text-align:center;padding:2px 0;border-radius:4px;color:var(--mute)}
+.ticks button.done{color:var(--fg)}
+.ticks button.cur{color:var(--accent-ink);background:var(--accent);font-weight:700}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.row{display:flex;align-items:center;gap:8px}
+.row .seg{flex:1}
+.cta{display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;border-radius:11px;background:var(--accent);color:var(--accent-ink);font-weight:700;font-size:14.5px}
+.cta svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cta:hover{filter:brightness(1.06)}
+
+/* 自己画 工具条 */
+#paintbar{position:absolute;left:50%;bottom:max(16px,env(safe-area-inset-bottom,0px));transform:translateX(-50%);display:flex;align-items:center;gap:10px;padding:10px 12px;max-width:calc(100% - 32px);flex-wrap:wrap;justify-content:center}
+#paintbar[hidden]{display:none!important}
+.tools{display:flex;gap:6px;flex-wrap:wrap}
+.tool{min-width:40px;height:40px;padding:0 10px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);font-family:var(--mono);font-size:12.5px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.tool[aria-pressed="true"]{border-color:var(--accent);background:rgba(232,166,63,.18);color:var(--accent)}
+.tool.sw{padding:0;width:34px;min-width:34px;height:34px;border-radius:50%;border:2px solid rgba(255,255,255,.14)}
+.tool.sw[aria-pressed="true"]{border-color:var(--fg);box-shadow:0 0 0 2px var(--accent)}
+.vsep{width:1px;height:28px;background:var(--line)}
+.size{display:flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--mute)}
+.size input{width:90px}
+.pbtn{height:40px;padding:0 12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-size:13px}
+.pbtn.done{background:var(--paper);color:#241a10;font-weight:700}
+
+#help{position:absolute;inset:0;display:grid;place-items:center;background:rgba(10,8,6,.6);z-index:20;padding:16px}
+#help[hidden]{display:none!important}
+#help .card{max-width:420px;padding:20px 22px;line-height:1.8;font-size:14px}
+#help h2{margin:0 0 8px;font-family:var(--display);font-size:22px;color:var(--accent)}
+#help kbd{font-family:var(--mono);font-size:12px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);background:var(--panel-2)}
+#help ul{margin:0;padding-left:18px}
+#toast{position:absolute;left:50%;top:18px;transform:translateX(-50%);padding:8px 14px;border-radius:99px;background:var(--paper);color:#241a10;font-size:13px;font-weight:500;opacity:0;transition:opacity .3s;pointer-events:none;z-index:30}
+#toast.show{opacity:1}
+
+@media (max-width:1180px) and (min-width:761px){
+  #sheet{inset:300px 16px 16px 376px}
+}
+@media (max-width:760px){
+  body{overflow:hidden}
+  #stage{bottom:auto;height:50%}
+  h1{font-size:30px}
+  .ui{position:absolute;top:50%;bottom:0;left:0;right:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding-block:12px 24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+  .left,.right{position:static;width:auto;max-height:none;overflow:visible}
+  .left{display:contents}
+  .right{order:2}
+  .brand{order:1;position:absolute;top:calc(-50vh + 12px);top:calc(-100% + 12px);display:none}
+  .stats{order:3}
+  .stepcard{order:4}
+  .refcard{order:5}
+  #sheet{inset:8px}
+  .paperbox{height:100%}
+  #paintbar{position:fixed;bottom:max(10px,env(safe-area-inset-bottom,0px))}
+  body.painting .ui{padding-bottom:150px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div id="app">
+  <div id="stage">
+    <canvas id="gl" aria-label="3D 画室，可拖动旋转"></canvas>
+    <div id="labels"></div>
+    <div id="sheet" hidden>
+      <div id="sheetBg"></div>
+      <div class="paperbox">
+        <canvas id="view2d" width="800" height="1000" aria-label="画纸"></canvas>
+        <canvas id="guide" width="800" height="1000" hidden></canvas>
+        <div id="tool2d" hidden><div class="sh"></div><div class="bd"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ui">
+    <section class="left">
+      <header class="brand">
+        <div class="eyebrow">一步一步 · 画室</div>
+        <h1 id="pieceTitle">石膏球体</h1>
+        <div class="sub" id="pieceSub">素描 · 光从左上方来</div>
+      </header>
+      <div class="stats">
+        <div class="stat card"><span class="k">步骤</span><span class="v"><b id="stStep">1</b> /<span id="stStepN">9</span></span></div>
+        <div class="stat card"><span class="k" id="stK2">调子</span><span class="v"><b id="st2">0</b> /<span id="st2N">5</span></span></div>
+        <div class="stat card"><span class="k">笔触</span><span class="v"><b id="st3">0</b></span></div>
+      </div>
+      <article class="card stepcard" aria-live="polite">
+        <div class="step-eyebrow" id="stepEyebrow">第 1 步 · 定位构图</div>
+        <p id="stepText"></p>
+        <div class="chips" id="chips"></div>
+        <p class="tip" id="stepTip"></p>
+      </article>
+      <article class="card refcard">
+        <div class="card-head"><span>写生视角 · <b id="refTitle">看懂光</b></span><span id="refHint">从画家的位置看静物</span></div>
+        <div class="refview"><canvas id="refgl"></canvas><div id="refLabels"></div></div>
+      </article>
+    </section>
+
+    <section class="right card panel">
+      <div>
+        <div class="lbl" style="margin-bottom:6px">作品</div>
+        <div class="seg" id="pieceSeg">
+          <button type="button" id="pSketch" data-piece="sketch" aria-pressed="true">素描 · 石膏球</button>
+          <button type="button" id="pGouache" data-piece="gouache" aria-pressed="false">水粉 · 苹果</button>
+          <button type="button" id="pOil" data-piece="oil" aria-pressed="false">油画 · 瓷瓶</button>
+        </div>
+      </div>
+      <div class="nav">
+        <button class="ib" id="prev" type="button" aria-label="上一步"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="nav-mid"><div id="navTitle">定位构图</div><div id="navSub">第 1 步 · 2H 铅笔</div></div>
+        <button class="ib play" id="play" type="button" aria-label="自动播放"><svg viewBox="0 0 24 24" id="playIcon"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg></button>
+        <button class="ib" id="next" type="button" aria-label="下一步"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
+      <div>
+        <div class="lbl" style="margin-bottom:6px">作画进程</div>
+        <div class="ticks" id="ticks"></div>
+        <input type="range" id="slider" min="0" max="9" step="1" value="1" aria-label="拖动查看每一步">
+      </div>
+      <div class="row">
+        <div class="seg" id="viewSeg">
+          <button type="button" id="vRoom" data-view="room" aria-pressed="true">画室</button>
+          <button type="button" id="vSheet" data-view="sheet" aria-pressed="false">画纸</button>
+        </div>
+        <button class="ib" id="orbit" type="button" aria-label="自动环绕" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 12a9 4 0 1 0 18 0 9 4 0 1 0-18 0"/><path d="M17 8.5l2.6.8-.6 2.6"/></svg></button>
+        <button class="ib" id="resetCam" type="button" aria-label="重置视角"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"/></svg></button>
+        <button class="ib" id="helpBtn" type="button" aria-label="操作说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8M12 17.2v.1"/></svg></button>
+      </div>
+      <button class="cta" id="paintBtn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg><span id="paintBtnText">自己动手画一张</span></button>
+    </section>
+
+    <div id="paintbar" class="card" hidden>
+      <div class="tools" id="tools"></div>
+      <div class="vsep"></div>
+      <label class="size" for="bsize">粗细<input type="range" id="bsize" min="1" max="10" value="4"></label>
+      <button class="pbtn" id="guideBtn" type="button" aria-pressed="false">临摹参考</button>
+      <button class="pbtn" id="undoBtn" type="button">撤销</button>
+      <button class="pbtn" id="newBtn" type="button">换张新纸</button>
+      <button class="pbtn done" id="exitPaint" type="button">完成</button>
+    </div>
+  </div>
+
+  <div id="help" hidden>
+    <div class="card">
+      <h2>怎么玩</h2>
+      <ul>
+        <li>拖动画室旋转，滚轮或双指缩放。</li>
+        <li><kbd>←</kbd> <kbd>→</kbd> 上一步 / 下一步，<kbd>空格</kbd> 自动播放。</li>
+        <li>拖动“作画进程”滑块，随时跳到任意一步。</li>
+        <li>“画纸”视图把画面放大，能看清每一根排线和笔触。</li>
+        <li>“自己动手画一张”：选铅笔或颜色，直接在画纸上画；在画室视图里也能直接画在画架上。打开“临摹参考”会叠一层淡淡的成品图。</li>
+      </ul>
+      <p style="margin:12px 0 0;text-align:right"><button class="pbtn done" id="helpClose" type="button">知道了</button></p>
+    </div>
+  </div>
+  <div id="toast" role="status"></div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const $ = id => document.getElementById(id);
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ================= 小工具 ================= */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const sm = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+const hex = h => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+const mixc = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
+const rgb = (c, k = 1) => `rgb(${clamp(c[0] * k, 0, 255) | 0},${clamp(c[1] * k, 0, 255) | 0},${clamp(c[2] * k, 0, 255) | 0})`;
+const n3 = v => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0] / l, v[1] / l, v[2] / l]; };
+const dot3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+function chain(stops, t) {
+  if (t <= stops[0][0]) return stops[0][1];
+  for (let i = 1; i < stops.length; i++) if (t <= stops[i][0]) {
+    const [t0, c0] = stops[i - 1], [t1, c1] = stops[i];
+    return mixc(c0, c1, (t - t0) / (t1 - t0));
+  }
+  return stops[stops.length - 1][1];
+}
+function rngOf(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+
+/* ================= 2D 作画引擎 ================= */
+const W = 800, H = 1000, MW = W / 2, MH = H / 2;
+function mk(w = W, h = H) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
+const ctx2 = c => c.getContext('2d', { willReadFrequently: false });
+
+const linen = (i, j) => (Math.sin(i * 1.15) > .55 ? 1 : 0) * .55 + (Math.sin(j * 1.15 + (Math.floor(i / 5.46) % 2) * 1.6) > .55 ? 1 : 0) * .45;
+function makePaper(baseHex, seed, weave) {
+  const c = mk(), x = ctx2(c), id = x.createImageData(W, H), b = hex(baseHex), r = rngOf(seed);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    let n = (r() - .5) * 9 + Math.sin(i * .05 + Math.sin(j * .02) * 3) * 1.2 + Math.sin(j * .37 + i * .013) * .8;
+    if (weave) n += -linen(i, j) * 16 + Math.sin(i * .21 + j * .003) * 3;
+    const o = (j * W + i) * 4;
+    id.data[o] = b[0] + n; id.data[o + 1] = b[1] + n; id.data[o + 2] = b[2] + n * .9; id.data[o + 3] = 255;
+  }
+  x.putImageData(id, 0, 0);
+  const g = x.createRadialGradient(W / 2, H / 2, H * .3, W / 2, H / 2, H * .78);
+  g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(70,45,10,.07)');
+  x.fillStyle = g; x.fillRect(0, 0, W, H);
+  return c;
+}
+const grain = (() => {
+  const c = mk(), x = ctx2(c), id = x.createImageData(W, H), r = rngOf(77);
+  for (let i = 0; i < W * H; i++) { const v = r(); id.data[i * 4 + 3] = v < .45 ? (.45 - v) / .45 * 255 : 0; }
+  x.putImageData(id, 0, 0); return c;
+})();
+
+// 亚麻布纹：油画颜料在布纹的凹处会薄一点
+const weave = (() => {
+  const c = mk(), x = ctx2(c), id = x.createImageData(W, H), r = rngOf(31);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) id.data[(j * W + i) * 4 + 3] = clamp(linen(i, j) * (.7 + r() * .5), 0, 1) * 255;
+  x.putImageData(id, 0, 0); return c;
+})();
+
+function makeMask(fn, q = 2) {
+  const mw = W / q, mh = H / q, h = q / 2 | 0, c = mk(mw, mh), x = ctx2(c), id = x.createImageData(mw, mh), a = new Float32Array(mw * mh);
+  for (let j = 0; j < mh; j++) for (let i = 0; i < mw; i++) {
+    const v = clamp(fn(i * q + h, j * q + h), 0, 1); a[j * mw + i] = v; id.data[(j * mw + i) * 4 + 3] = v * 255;
+  }
+  x.putImageData(id, 0, 0);
+  c.sample = (px, py) => a[clamp(py / q | 0, 0, mh - 1) * mw + clamp(px / q | 0, 0, mw - 1)];
+  return c;
+}
+
+function tracePath(c, p, ox = 0, oy = 0) {
+  c.beginPath(); c.moveTo(p[0] + ox, p[1] + oy);
+  if (p.length === 4) { c.lineTo(p[2] + ox, p[3] + oy); return; }
+  for (let i = 2; i < p.length - 2; i += 2) {
+    c.quadraticCurveTo(p[i] + ox, p[i + 1] + oy, (p[i] + p[i + 2]) / 2 + ox, (p[i + 1] + p[i + 3]) / 2 + oy);
+  }
+  c.lineTo(p[p.length - 2] + ox, p[p.length - 1] + oy);
+}
+function drawStroke(c, s) {
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  if (s.k === 'dot') { c.globalAlpha = s.a; c.fillStyle = s.c; c.beginPath(); c.arc(s.x, s.y, s.r, 0, 7); c.fill(); c.globalAlpha = 1; return; }
+  const p = s.p;
+  if (s.k === 'oil') { drawOil(c, s); return; }
+  c.globalAlpha = s.a; c.strokeStyle = s.c; c.lineWidth = s.w; tracePath(c, p); c.stroke();
+  if (s.k === 'brush') {
+    const dx = p[p.length - 2] - p[0], dy = p[p.length - 1] - p[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, r = rngOf(s.seed);
+    for (let b = 0; b < 5; b++) {
+      const off = (r() - .5) * s.w * .85;
+      c.globalAlpha = s.a * (.25 + r() * .25); c.strokeStyle = r() < .5 ? s.c2 : s.c3; c.lineWidth = s.w * (.07 + r() * .12);
+      tracePath(c, p, nx * off, ny * off); c.stroke();
+    }
+  }
+  c.globalAlpha = 1;
+}
+// 油画笔触：颜料有厚度。光从左上来，所以每一笔左上边缘亮、右下边缘落一道暗边，中间是猪鬃留下的沟
+function drawOil(c, s) {
+  const p = s.p, h = s.h || 0, dx = p[p.length - 2] - p[0], dy = p[p.length - 1] - p[1], L = Math.hypot(dx, dy) || 1;
+  let nx = -dy / L, ny = dx / L; if (nx * -.7 + ny * -.7 < 0) { nx = -nx; ny = -ny; }
+  const r = rngOf(s.seed);
+  c.lineCap = s.cap || 'round';
+  if (h > 0) { c.globalAlpha = s.a * .5 * h; c.strokeStyle = s.c3; c.lineWidth = s.w; tracePath(c, p, -nx * s.w * .12 + 1.4 * h, -ny * s.w * .12 + 1.4 * h); c.stroke(); }
+  c.globalAlpha = s.a; c.strokeStyle = s.c; c.lineWidth = s.w; tracePath(c, p); c.stroke();
+  for (let b = 0; b < 5; b++) {
+    const off = (r() - .5) * s.w * .85, dark = b % 2 === 0;
+    c.globalAlpha = s.a * (dark ? .32 + h * .25 : .22 + h * .3); c.strokeStyle = dark ? s.c3 : s.c2; c.lineWidth = s.w * (.04 + r() * .08);
+    tracePath(c, p, nx * off, ny * off); c.stroke();
+  }
+  if (h > 0) { c.globalAlpha = s.a * .7 * h; c.strokeStyle = s.c4 || s.c2; c.lineWidth = Math.max(1, s.w * .12); tracePath(c, p, nx * s.w * .36, ny * s.w * .36); c.stroke(); }
+  c.lineCap = 'round'; c.globalAlpha = 1;
+}
+const oilS = (p, w, col, a, h, cap) => ({ k: 'oil', p, w, c: rgb(col), c2: rgb(col, 1.15), c3: rgb(col, .7), c4: rgb(mixc(col, [255, 250, 235], .55)), a, h, cap, seed: (p[0] * 131 + p[1] * 71) | 0 });
+function strokeEnd(s) { return s.k === 'dot' ? [s.x, s.y] : [s.p[s.p.length - 2], s.p[s.p.length - 1]]; }
+
+// 把一层笔触按蒙版合成到目标画布上
+function compositePass(dst, pass, lay, tmp, paper) {
+  const t = ctx2(tmp);
+  t.globalCompositeOperation = 'copy'; t.drawImage(lay, 0, 0);
+  if (pass.mask) { t.globalCompositeOperation = 'destination-in'; t.drawImage(pass.mask, 0, 0, W, H); }
+  if (pass.grain) { t.globalCompositeOperation = 'destination-out'; t.globalAlpha = pass.grain; t.drawImage(pass.tooth === 'weave' ? weave : grain, 0, 0); t.globalAlpha = 1; }
+  if (pass.mode === 'erase') { t.globalCompositeOperation = 'source-in'; t.drawImage(paper, 0, 0); }
+  t.globalCompositeOperation = 'source-over';
+  dst.globalAlpha = pass.opacity ?? 1; dst.globalCompositeOperation = pass.blend || 'source-over'; dst.drawImage(tmp, 0, 0); dst.globalAlpha = 1; dst.globalCompositeOperation = 'source-over';
+}
+
+/* 笔触生成器 */
+function hatch(rng, o) {
+  const { m, box = [0, 0, W, H], cell = 80, gap = 5, angles = [-.8], w = 1.3, c = '#2a2826', a = .5, bow = 6, thr = .03 } = o;
+  const S = [], cells = [];
+  for (let y = box[1]; y < box[3]; y += cell) for (let x = box[0]; x < box[2]; x += cell) {
+    const cx = x + cell / 2, cy = y + cell / 2, h = cell * .6;
+    let mx = 0;
+    for (const [u, v] of [[0, 0], [-h, -h], [h, -h], [-h, h], [h, h], [-h, 0], [h, 0], [0, -h], [0, h]]) mx = Math.max(mx, m.sample(cx + u, cy + v));
+    if (mx > thr) cells.push([cx, cy, cy + rng() * cell * 1.6]);
+  }
+  cells.sort((p, q) => p[2] - q[2]);
+  for (const [cx, cy] of cells) for (const ang of angles) {
+    const dx = Math.cos(ang), dy = Math.sin(ang), px = -dy, py = dx, n = Math.ceil(cell * 1.25 / gap);
+    for (let i = 0; i < n; i++) {
+      const off = (i - n / 2) * gap + (rng() - .5) * gap * .5, L = cell * (.95 + rng() * .5);
+      const sx = cx + px * off - dx * L / 2 + (rng() - .5) * 8, sy = cy + py * off - dy * L / 2 + (rng() - .5) * 8;
+      const ex = sx + dx * L, ey = sy + dy * L, b = (rng() - .5) * bow;
+      S.push({ k: 'line', p: [sx, sy, (sx + ex) / 2 + px * b, (sy + ey) / 2 + py * b, ex, ey], w: w * 1.3 * (.8 + rng() * .4), c, a: Math.min(1, a * 1.8 * (.7 + rng() * .5)) });
+    }
+  }
+  return S;
+}
+function brushes(rng, o) {
+  const { m, box = [0, 0, W, H], cell = 24, w = [20, 30], len = [40, 80], dir, col, a = .95, thr = .04, per = 1, kind = 'brush', h = 0 } = o;
+  const S = [], cells = [];
+  for (let y = box[1]; y < box[3]; y += cell) for (let x = box[0]; x < box[2]; x += cell) {
+    const cx = x + cell / 2 + (rng() - .5) * cell * .6, cy = y + cell / 2 + (rng() - .5) * cell * .6;
+    const h = cell * .7;
+    const mx = Math.max(m.sample(cx, cy), m.sample(cx - h, cy), m.sample(cx + h, cy), m.sample(cx, cy - h), m.sample(cx, cy + h));
+    if (mx > thr) cells.push([cx, cy, cy + rng() * cell * 3]);
+  }
+  cells.sort((p, q) => p[2] - q[2]);
+  for (const [cx, cy] of cells) for (let k = 0; k < per; k++) {
+    const ang = dir(cx, cy) + (rng() - .5) * .5, L = lerp(len[0], len[1], rng()), dx = Math.cos(ang), dy = Math.sin(ang);
+    const sx = cx - dx * L / 2 + (rng() - .5) * cell * .4, sy = cy - dy * L / 2 + (rng() - .5) * cell * .4, b = (rng() - .5) * L * .2;
+    const base = col(cx, cy), j = 1 + (rng() - .5) * .1;
+    S.push({ k: kind, h, p: [sx, sy, sx + dx * L / 2 - dy * b, sy + dy * L / 2 + dx * b, sx + dx * L, sy + dy * L], w: lerp(w[0], w[1], rng()), c: rgb(base, j), c2: rgb(base, j * 1.14), c3: rgb(base, j * (kind === 'oil' ? .7 : .82)), c4: rgb(mixc(base, [255, 250, 235], .5)), a, seed: rng() * 1e9 | 0 });
+  }
+  return S;
+}
+function sketchLine(rng, x0, y0, x1, y1, o) {
+  const { w = 1.3, c = '#6c6761', a = .45, passes = 2, j = 2.2, seg = 170 } = o;
+  const S = [], L = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.round(L / seg));
+  for (let p = 0; p < passes; p++) for (let i = 0; i < n; i++) {
+    const t0 = Math.max(0, i / n - .03), t1 = Math.min(1, (i + 1) / n + .03), tm = (t0 + t1) / 2;
+    const P = t => [lerp(x0, x1, t) + (rng() - .5) * j, lerp(y0, y1, t) + (rng() - .5) * j];
+    S.push({ k: 'line', p: [...P(t0), ...P(tm), ...P(t1)], w: w * (.85 + rng() * .3), c, a: a * (.75 + rng() * .4) });
+  }
+  return S;
+}
+function arcStrokes(rng, cx, cy, rx, ry, a0, a1, o) {
+  const { w = 1.5, c = '#3e3a36', a = .6, pieces = 6, j = 1.8, rot = 0, rf = null } = o;
+  const S = [], cr = Math.cos(rot), sr = Math.sin(rot);
+  for (let i = 0; i < pieces; i++) {
+    const t0 = a0 + (a1 - a0) * (i / pieces) - .04, t1 = a0 + (a1 - a0) * ((i + 1) / pieces) + .04, p = [];
+    for (let k = 0; k <= 6; k++) {
+      const t = lerp(t0, t1, k / 6), rr = rf ? rf(t) : 1;
+      const ex = Math.cos(t) * rx * rr, ey = Math.sin(t) * ry * rr;
+      p.push(cx + ex * cr - ey * sr + (rng() - .5) * j, cy + ex * sr + ey * cr + (rng() - .5) * j);
+    }
+    S.push({ k: 'line', p, w: w * (.85 + rng() * .3), c, a: a * (.8 + rng() * .3) });
+  }
+  return S;
+}
+function signature(x, y, c, w = 2) {
+  const p = [];
+  for (let i = 0; i <= 36; i++) { const t = i / 36; p.push(x + t * 90 + Math.sin(t * 22) * 6, y + Math.cos(t * 22) * 9 * (1 - t * .5) - t * 8); }
+  return [{ k: 'line', p, w, c, a: .8 }, { k: 'line', p: [x - 4, y + 16, x + 50, y + 13, x + 100, y + 10], w: w * .8, c, a: .6 }];
+}
+
+/* ================= 作品一：素描 · 石膏球体 ================= */
+function defSketch() {
+  const CX = 400, CY = 430, R = 205, TE = 540;
+  const L = n3([-.62, -.6, .38]), Hn = n3([L[0], L[1], L[2] + 1]), B = n3([.45, .8, .25]);
+  const sph = (x, y) => {
+    const dx = (x - CX) / R, dy = (y - CY) / R, q = Math.hypot(dx, dy), a = clamp((1 - q) * R / 1.5 + .5, 0, 1);
+    const s = q > .999 ? .999 / q : 1, nx = dx * s, ny = dy * s, nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny)), n = [nx, ny, nz];
+    return { a, d: dot3(n, L), hl: dot3(n, Hn), rf: dot3(n, B) };
+  };
+  const shadowE = (x, y) => { const u = x - 560, v = y - 612, c = Math.cos(.12), s = Math.sin(.12); const xr = u * c - v * s, yr = u * s + v * c; return (xr / 232) ** 2 + (yr / 40) ** 2; };
+  const M = {}; const mm = (k, f) => M[k] || (M[k] = makeMask(f));
+  const G = { grain: .28, tool: 'pencil' };
+  return {
+    key: 'sketch', name: '石膏球体', sub: '素描 · 光从左上方来', medium: '素描', paper: '#f3f0e8',
+    counter: { label: '调子', items: [['高光', '#f4f1ea'], ['灰面', '#b9b4ab'], ['明暗交界线', '#3a3633'], ['反光', '#8a847b'], ['投影', '#55504a']] },
+    idleTool: 'pencil',
+    steps: [
+      { title: '准备工具', tool: '2H · HB · 4B · 8B', cam: 'tools', focus: ['pencils', 'eraser', 'knife'], ann: [], ref: '先看静物',
+        text: '素描靠铅笔的软硬来控制深浅：<b>H</b> 前的数字越大，笔芯越硬越浅；<b>B</b> 前的数字越大，越软越黑。再备一块<b>可塑橡皮</b>，它不只用来擦错，还能“画”出反光和高光。',
+        tip: '<span>削笔：</span>露出 1.5 厘米左右的长笔芯。侧锋铺调子，笔尖刻细节。' },
+      { title: '定位构图', tool: '2H 铅笔', cam: 'easel', focus: ['subject'], ann: ['axis'], ref: '找中心线',
+        text: '先用很轻的线定出球体的<b>上、下、左、右</b>四个点和中心十字线。球体放在画面中间略偏上，下方和右边给<b>投影</b>留出位置。',
+        tip: '<span>手要轻：</span>这一步只是搭架子，线条轻到随时能擦掉。',
+        build: r => [{ ...G, grain: .2, strokes: [
+          ...sketchLine(r, CX, CY - R - 40, CX, CY + R + 40, {}), ...sketchLine(r, CX - R - 40, CY, CX + R + 40, CY, {}),
+          ...sketchLine(r, CX - R, CY - R, CX + R, CY - R, { a: .3 }), ...sketchLine(r, CX + R, CY - R, CX + R, CY + R, { a: .3 }),
+          ...sketchLine(r, CX + R, CY + R, CX - R, CY + R, { a: .3 }), ...sketchLine(r, CX - R, CY + R, CX - R, CY - R, { a: .3 }),
+          ...sketchLine(r, CX - 40, CY - R, CX + 40, CY - R, { a: .7, passes: 3, w: 1.6 }), ...sketchLine(r, CX - 40, CY + R, CX + 40, CY + R, { a: .7, passes: 3, w: 1.6 }),
+          ...sketchLine(r, CX - R, CY - 40, CX - R, CY + 40, { a: .7, passes: 3, w: 1.6 }), ...sketchLine(r, CX + R, CY - 40, CX + R, CY + 40, { a: .7, passes: 3, w: 1.6 }),
+          ...sketchLine(r, 40, TE, W - 40, TE, { a: .35 }),
+          ...arcStrokes(r, 560, 612, 232, 40, Math.PI * .55, Math.PI * 2.05, { rot: -.12, c: '#7a756f', a: .3, w: 1.2, pieces: 5 })
+        ] }] },
+      { title: '切方找形', tool: 'HB 铅笔', cam: 'easel', focus: ['subject'], ann: ['axis'], ref: '圆是切出来的',
+        text: '圆不是一笔画出来的。先切出<b>八边形</b>，再把每个角切掉变成<b>十六边形</b>，最后顺着折线修成圆。',
+        tip: '<span>用手臂带线：</span>手腕放松，切的次数越多，圆越准。',
+        build: r => {
+          const S = [];
+          for (const [n, a] of [[8, .45], [16, .35]]) {
+            const rr = R / Math.cos(Math.PI / n);
+            for (let i = 0; i < n; i++) {
+              const t0 = i * 2 * Math.PI / n + Math.PI / n, t1 = t0 + 2 * Math.PI / n;
+              S.push(...sketchLine(r, CX + Math.cos(t0) * rr, CY + Math.sin(t0) * rr, CX + Math.cos(t1) * rr, CY + Math.sin(t1) * rr, { c: '#55504b', a, w: 1.4, passes: 1, seg: 400 }));
+            }
+          }
+          S.push(...arcStrokes(r, CX, CY, R, R, -Math.PI / 2, Math.PI * 1.5, { pieces: 8, c: '#3c3935', a: .7, w: 1.8 }));
+          return [{ ...G, grain: .2, strokes: S }];
+        } },
+      { title: '明暗交界线', tool: '2B 铅笔', cam: 'still', focus: ['lamp', 'subject'], ann: ['light', 'term'], gain: ['明暗交界线'], ref: '光与交界线',
+        text: '光从<b>左上方</b>照来，球上受光和背光的分界是一条弧线，叫<b>明暗交界线</b>。它不在球的正中，而是偏向背光一侧，也是整个球上最暗的地方。',
+        tip: '<span>它是一条带：</span>交界线有宽度，两边都要渐变过渡，别画成一根硬线。',
+        build: r => [{ ...G, mask: mm('band', (x, y) => { const s = sph(x, y); return s.a * Math.exp(-(((s.d + .1) / .13) ** 2)) * .95; }), strokes: [
+          ...hatch(r, { m: M.band, cell: 60, gap: 4, angles: [-.85], w: 1.4, c: '#2b2826', a: .55 }),
+          ...hatch(r, { m: M.band, cell: 60, gap: 5, angles: [-.25], w: 1.2, c: '#2b2826', a: .4 })] }] },
+      { title: '铺暗部', tool: '4B 铅笔', cam: 'easel', focus: ['subject'], ann: ['light', 'term', 'dark'], ref: '暗部要整体',
+        text: '用侧锋把交界线以外的<b>暗部</b>整体铺一遍。先求整体，排线方向统一，暂时不管细节。',
+        tip: '<span>排线：</span>两头轻、中间重。线与线之间留一点缝，下一层再交叉补上。',
+        build: r => { const m = mm('dark', (x, y) => { const s = sph(x, y); return s.a * sm(.06, -.12, s.d) * .92; });
+          return [{ ...G, mask: m, strokes: hatch(r, { m, cell: 80, gap: 5, angles: [-.85], w: 1.8, c: '#2e2b29', a: .5 }) },
+                  { ...G, mask: m, strokes: hatch(r, { m, cell: 80, gap: 6, angles: [.3], w: 1.6, c: '#2e2b29', a: .4 }) }]; } },
+      { title: '画投影', tool: '4B 铅笔', cam: 'still', focus: ['lamp', 'cloth'], ann: ['light', 'shadow'], gain: ['投影'], ref: '投影的方向',
+        text: '投影落在光源的反方向。灯在左前上方，影子就倒向<b>右后方</b>。离球越近的投影越深越实，越远越浅越虚；球和台面<b>接触的地方最黑</b>。',
+        tip: '<span>投影边缘：</span>近处硬、远处软。整片投影也比暗部稍浅一点。',
+        build: r => { const m = mm('shadow', (x, y) => { const s = sph(x, y), e = shadowE(x, y);
+            const base = sm(1, .5, e) * .8 * (1 - .45 * clamp((x - 380) / 450, 0, 1));
+            const core = Math.exp(-(((x - 405) / 105) ** 2 + ((y - 632) / 14) ** 2));
+            return (1 - s.a) * clamp(base + core * .75, 0, 1); });
+          return [{ ...G, mask: m, strokes: hatch(r, { m, box: [180, 540, 800, 700], cell: 64, gap: 4.5, angles: [.05, -.5], w: 1.7, c: '#2c2927', a: .5 }) }]; } },
+      { title: '中间调过渡', tool: 'HB 铅笔', cam: 'easel', focus: ['subject'], ann: ['light', 'mid'], gain: ['灰面'], ref: '灰面让球变圆',
+        text: '亮部并不是一片白。顺着球的弧度，从交界线往受光一侧一层层减轻，画出<b>灰面</b>。这一步，球才真正“圆”起来。',
+        tip: '<span>顺着形体：</span>越靠近亮部，排线越稀越轻，最后几乎看不见。',
+        build: r => { const m = mm('mid', (x, y) => { const s = sph(x, y); return s.a * (s.d > 0 ? sm(.55, .02, s.d) * .26 : .3); });
+          return [{ ...G, mask: m, strokes: hatch(r, { m, cell: 70, gap: 4.5, angles: [-.9], w: 1.2, c: '#47433f', a: .45 }) },
+                  { ...G, mask: m, strokes: hatch(r, { m, cell: 70, gap: 6, angles: [.6], w: 1.1, c: '#47433f', a: .35 }) }]; } },
+      { title: '擦出反光', tool: '可塑橡皮', cam: 'easel', focus: ['eraser', 'cloth'], ann: ['refl'], gain: ['反光'], ref: '台面把光弹回来',
+        text: '台面会把光反射回球体，所以暗部靠近底边的地方会微微变亮，这就是<b>反光</b>。把可塑橡皮捏尖，顺着球的边缘轻轻提亮。',
+        tip: '<span>别太亮：</span>反光再亮也属于暗部，绝不能亮过灰面，否则球会显得“碎”。',
+        build: r => { const m = mm('refl', (x, y) => { const s = sph(x, y); return s.a * sm(-.02, -.25, s.d) * sm(.25, .85, s.rf) * .32; });
+          return [{ mode: 'erase', tool: 'eraser', mask: m, strokes: hatch(r, { m, cell: 50, gap: 9, angles: [.9], w: 12, c: '#000', a: .45, bow: 14 }) }]; } },
+      { title: '高光', tool: '2H 铅笔 + 橡皮', cam: 'still', focus: ['lamp', 'subject'], ann: ['light', 'hl'], gain: ['高光'], ref: '最亮的一点',
+        text: '在离光源最近、又正对着我们眼睛的位置留出<b>高光</b>。周围用 2H 铺一层极浅的灰去衬托它，最后用橡皮把高光点干净。',
+        tip: '<span>衬出来的亮：</span>高光不是画白的，是靠周围的灰衬出来的。',
+        build: r => { const m1 = mm('lite', (x, y) => { const s = sph(x, y); return s.a * sm(-.05, .25, s.d) * (1 - sm(.93, .985, s.hl)) * .13; });
+          const m2 = mm('hl', (x, y) => { const s = sph(x, y); return s.a * sm(.955, .995, s.hl) * .95; });
+          return [{ ...G, mask: m1, strokes: hatch(r, { m: m1, cell: 70, gap: 5, angles: [-.8], w: 1, c: '#6a6560', a: .35 }) },
+                  { mode: 'erase', tool: 'eraser', mask: m2, strokes: hatch(r, { m: m2, cell: 40, gap: 7, angles: [.3], w: 14, c: '#000', a: .55 }) }]; } },
+      { title: '整体调整', tool: '8B 铅笔', cam: 'overview', focus: ['subject', 'backdrop'], ann: ['light', 'term', 'shadow', 'refl', 'hl'], ref: '五大调子',
+        text: '铺上<b>背景</b>和台面，压深交界线和接触点，把前后空间拉开。退后一步看整体：高光、灰面、明暗交界线、反光、投影，<b>五大调子</b>都齐了。',
+        tip: '<span>收：</span>画到最后，最亮和最暗都只该有一处，其余都要给它们让路。',
+        build: r => {
+          const mb = mm('bg', (x, y) => { const s = sph(x, y), o = 1 - s.a; if (y < TE) return o * (.24 + .22 * x / W - .08 * y / TE) * sm(TE + 1, TE - 5, y); return o * (.02 + .09 * (y - TE) / (H - TE)); });
+          const md = mm('deep', (x, y) => { const s = sph(x, y); return s.a * (Math.exp(-(((s.d + .14) / .09) ** 2)) * .75 + Math.exp(-(((y - 630) / 18) ** 2 + ((x - 410) / 90) ** 2)) * .6); });
+          return [
+            { ...G, mask: mb, strokes: hatch(r, { m: mb, cell: 90, gap: 5, angles: [-1.15, -.35], w: 1.8, c: '#3a3633', a: .42 }) },
+            { ...G, mask: md, strokes: hatch(r, { m: md, cell: 60, gap: 3.5, angles: [-.85], w: 1.6, c: '#1f1d1b', a: .6 }) },
+            { ...G, grain: .15, strokes: [...sketchLine(r, 0, TE, 228, TE, { c: '#2f2c2a', a: .55, w: 2, passes: 1 }), ...sketchLine(r, 572, TE, W, TE, { c: '#2f2c2a', a: .55, w: 2, passes: 1 }), ...signature(640, 930, '#3a3633')] }
+          ];
+        } }
+    ]
+  };
+}
+
+/* ================= 作品二：水粉 · 红苹果 ================= */
+function defGouache() {
+  const ACX = 400, ACY = 545, AR = 195, TE = 610;
+  const L = n3([-.5, -.62, .6]), Hn = n3([L[0], L[1], L[2] + 1]), B = n3([.4, .85, .3]);
+  const rOf = t => AR * (1 - .08 * Math.sin(t)) - AR * .13 * Math.exp(-(((t + Math.PI / 2) / .33) ** 2)) - AR * .04 * Math.exp(-(((t - Math.PI / 2) / .3) ** 2));
+  const ap = (x, y) => {
+    const dx = x - ACX, dy = y - ACY, dist = Math.hypot(dx, dy), t = Math.atan2(dy, dx), r = rOf(t), a = clamp((r - dist) / 1.5 + .5, 0, 1);
+    const q = Math.min(dist / r, .999), nx = Math.cos(t) * q, ny = Math.sin(t) * q, n = [nx, ny, Math.sqrt(1 - q * q)];
+    return { a, d: dot3(n, L), hl: dot3(n, Hn), rf: dot3(n, B), dist, r };
+  };
+  const C = Object.fromEntries(Object.entries({ white: '#f6f2ea', lemon: '#f2d23c', ochre: '#c8902e', verm: '#e0482a', crim: '#8e1c1a', ultra: '#2f3f8f', umber: '#5a3a26', olive: '#6f7a4a' }).map(([k, v]) => [k, hex(v)]));
+  const wallCol = (x, y) => mixc(hex('#58604f'), hex('#a9ab90'), clamp(.78 - x / W * .75 + (1 - y / TE) * .1 - Math.hypot(x - 120, y - 120) / 1500, 0, 1));
+  const fold = (x, y) => .5 + .5 * Math.sin((x * .9 + (y - TE) * 1.4) / 60 + Math.sin(x / 140) * 1.6);
+  const clothCol = (x, y) => chain([[0, hex('#3d4e6e')], [.5, hex('#6a81a1')], [1, hex('#a0b3ca')]], clamp(.5 - x / W * .35 + (fold(x, y) - .5) * .7, 0, 1));
+  const appleCol = (x, y) => chain([[-1, hex('#4a1012')], [-.35, hex('#6b1515')], [-.05, hex('#8f1d18')], [.25, hex('#c2321f')], [.55, hex('#df4f28')], [.85, hex('#ee8a3c')], [1, hex('#f2a64a')]], ap(x, y).d);
+  const shadowE = (x, y) => { const u = x - 565, v = y - 690, c = Math.cos(.12), s = Math.sin(.12); const xr = u * c - v * s, yr = u * s + v * c; return (xr / 218) ** 2 + (yr / 40) ** 2; };
+  const tangent = (x, y) => Math.atan2(y - ACY, x - ACX) + Math.PI / 2;
+  const M = {}; const mm = (k, f) => M[k] || (M[k] = makeMask(f));
+  const Bt = { tool: 'brush', grain: .08 };
+  return {
+    key: 'gouache', name: '红苹果', sub: '水粉 · 暖光下的冷暖', medium: '水粉', paper: '#efe8da',
+    counter: { label: '颜色', items: [['熟褐', '#5a3a26'], ['橄榄绿', '#6f7a4a'], ['土黄', '#c8902e'], ['钛白', '#f6f2ea'], ['群青', '#2f3f8f'], ['深红', '#8e1c1a'], ['朱红', '#e0482a'], ['柠檬黄', '#f2d23c']] },
+    idleTool: 'brush',
+    steps: [
+      { title: '准备颜料', tool: '调色盘 · 洗笔桶 · 平头笔', cam: 'tools', focus: ['palette', 'bucket', 'brushes'], ann: [], ref: '先看静物',
+        text: '水粉是<b>不透明</b>的颜料，浅色可以盖住深色。先把要用的颜色挤在调色盘边上，按冷暖排好，中间留出调色的地方。',
+        tip: '<span>水量：</span>调出来像酸奶一样稠最合适，太稀会透底，太干拖不动笔。' },
+      { title: '起稿', tool: '熟褐 · 小号笔', cam: 'easel', focus: ['subject'], ann: ['axis'], gain: ['熟褐'], ref: '找形',
+        text: '用加水稀释的<b>熟褐</b>淡淡勾出苹果外形、桌面线和投影的位置。苹果不是正圆：上宽下窄，顶上有一个凹进去的<b>果窝</b>。',
+        tip: '<span>颜色要淡：</span>起稿的线最后会被颜色盖住，所以别用铅笔，铅笔灰会把颜色弄脏。',
+        build: r => [{ ...Bt, strokes: [
+          ...arcStrokes(r, ACX, ACY, 1, 1, -Math.PI / 2 + .25, Math.PI * 1.5 - .25, { pieces: 9, c: '#8a5a3a', a: .65, w: 2.4, rf: t => rOf(t) }),
+          ...sketchLine(r, 30, TE, W - 30, TE, { c: '#8a5a3a', a: .45, w: 2, passes: 1 }),
+          ...arcStrokes(r, 565, 690, 218, 40, Math.PI * .5, Math.PI * 2.05, { rot: -.12, c: '#8a5a3a', a: .4, w: 1.8, pieces: 5 }),
+          { k: 'line', p: [402, 372, 410, 348, 430, 320], w: 3, c: '#8a5a3a', a: .7 }] }] },
+      { title: '铺背景', tool: '橄榄绿 · 土黄 · 钛白', cam: 'easel', focus: ['backdrop', 'lamp'], ann: ['warm', 'cool'], gain: ['橄榄绿', '土黄', '钛白'], ref: '背景也有冷暖',
+        text: '先画面积最大的<b>背景</b>。左边离灯近，色调偏暖偏亮，多调一点土黄和钛白；右边离灯远，偏冷偏暗。',
+        tip: '<span>顺序：</span>从大到小、从深到浅，是水粉最基本的作画顺序。',
+        build: r => { const m = mm('wall', (x, y) => (1 - ap(x, y).a) * sm(TE + 3, TE - 3, y));
+          return [{ ...Bt, mask: m, strokes: brushes(r, { m, box: [0, 0, W, TE + 20], cell: 26, w: [28, 40], len: [50, 95], dir: (x, y) => Math.sin(x * .031 + y * .017) * 1.1 + Math.sin(y * .05) * .4, col: wallCol }) }]; } },
+      { title: '铺衬布', tool: '群青 · 钛白', cam: 'still', focus: ['cloth'], ann: ['fold'], gain: ['群青'], ref: '布的褶皱',
+        text: '蓝灰色衬布用群青加钛白，再带一点背景色。顺着<b>褶皱</b>的走向用笔：朝着灯的褶皱面亮一些，背着灯的面暗一些。',
+        tip: '<span>笔触方向：</span>跟着布纹走，画出来的布才“软”。',
+        build: r => { const m = mm('cloth', (x, y) => (1 - ap(x, y).a) * sm(TE - 3, TE + 3, y));
+          return [{ ...Bt, mask: m, strokes: brushes(r, { m, box: [0, TE - 20, W, H], cell: 24, w: [24, 34], len: [50, 90], dir: () => .55, col: clothCol }) }]; } },
+      { title: '苹果暗部', tool: '深红 · 群青', cam: 'easel', focus: ['subject'], ann: ['term', 'dark'], gain: ['深红'], ref: '暗部偏冷',
+        text: '苹果的暗部用<b>深红</b>加一点点群青，让颜色“沉”下去。笔触顺着球面的弧度绕着走。',
+        tip: '<span>先暗后亮：</span>暗部先铺，亮部再压上去，边缘自然就衔接上了。',
+        build: r => { const m = mm('adark', (x, y) => { const s = ap(x, y); return s.a * sm(.22, .02, s.d); });
+          return [{ ...Bt, mask: m, strokes: brushes(r, { m, box: [180, 330, 620, 760], cell: 18, w: [18, 26], len: [34, 60], dir: tangent, col: appleCol }) }]; } },
+      { title: '苹果亮部', tool: '朱红 · 柠檬黄', cam: 'easel', focus: ['subject', 'lamp'], ann: ['light', 'warm2'], gain: ['朱红', '柠檬黄'], ref: '亮部偏暖',
+        text: '亮部用<b>朱红</b>，越靠近光源越多加<b>柠檬黄</b>。暖光下，亮部偏暖、暗部偏冷，这就是<b>冷暖对比</b>。',
+        tip: '<span>一笔是一笔：</span>水粉别来回涂抹，下笔肯定，笔触本身就是画面的一部分。',
+        build: r => { const m = mm('alite', (x, y) => { const s = ap(x, y); return s.a * sm(-.12, .08, s.d); });
+          return [{ ...Bt, mask: m, strokes: brushes(r, { m, box: [180, 330, 620, 760], cell: 16, w: [15, 22], len: [30, 54], dir: tangent, col: appleCol }) }]; } },
+      { title: '投影与交界线', tool: '群青 · 深红 · 熟褐', cam: 'still', focus: ['cloth', 'subject'], ann: ['shadow', 'term'], ref: '投影不是黑的',
+        text: '衬布上的<b>投影</b>不是黑色，而是布本身的颜色加深，再偏冷、偏紫一点。同时压深苹果的<b>明暗交界线</b>。',
+        tip: '<span>别用黑：</span>水粉里的黑一碰就“脏”，用深红加群青调出来的深色更透气。',
+        build: r => {
+          const ms = mm('gshadow', (x, y) => { const s = ap(x, y), e = shadowE(x, y); const core = Math.exp(-(((x - 410) / 110) ** 2 + ((y - 720) / 12) ** 2)); return (1 - s.a) * (y > TE ? 1 : 0) * clamp(sm(1, .55, e) * (1 - .35 * clamp((x - 380) / 420, 0, 1)) + core, 0, 1); });
+          const mb = mm('gband', (x, y) => { const s = ap(x, y); return s.a * Math.exp(-(((s.d + .05) / .12) ** 2)) * .8; });
+          return [
+            { ...Bt, mask: ms, strokes: brushes(r, { m: ms, box: [300, 620, 800, 760], cell: 18, w: [18, 26], len: [40, 70], dir: () => -.12, col: (x, y) => mixc(mixc(clothCol(x, y), [0, 0, 0], .45), hex('#3b2f58'), .35) }) },
+            { ...Bt, mask: mb, strokes: brushes(r, { m: mb, box: [180, 330, 620, 760], cell: 14, w: [12, 18], len: [26, 44], dir: tangent, col: () => hex('#64161a') }) }
+          ];
+        } },
+      { title: '环境色', tool: '群青 · 朱红', cam: 'easel', focus: ['cloth', 'subject'], ann: ['refl', 'bounce'], ref: '颜色会互相染',
+        text: '物体会互相“染色”。蓝色衬布映到苹果底部，形成带紫的<b>反光</b>；苹果的红也会映到旁边的布上。这就是<b>环境色</b>。',
+        tip: '<span>点到为止：</span>环境色很微妙，薄薄一层就够，抢过固有色就假了。',
+        build: r => {
+          const m1 = mm('grefl', (x, y) => { const s = ap(x, y); return s.a * sm(0, -.25, s.d) * sm(.3, .85, s.rf) * .75; });
+          const m2 = mm('bounce', (x, y) => (1 - ap(x, y).a) * (y > TE ? 1 : 0) * Math.exp(-(((x - 470) / 105) ** 2 + ((y - 728) / 22) ** 2)) * .7);
+          return [
+            { ...Bt, mask: m1, strokes: brushes(r, { m: m1, box: [250, 480, 640, 760], cell: 14, w: [12, 18], len: [24, 40], dir: tangent, col: () => hex('#7a3b55') }) },
+            { ...Bt, opacity: .6, mask: m2, strokes: brushes(r, { m: m2, box: [300, 680, 640, 780], cell: 16, w: [14, 20], len: [30, 50], dir: () => 0, col: () => hex('#835670') }) }
+          ];
+        } },
+      { title: '细节与高光', tool: '钛白 · 熟褐 · 勾线笔', cam: 'still', focus: ['subject', 'lamp'], ann: ['hl', 'stem'], ref: '高光与果柄',
+        text: '加上<b>果柄</b>、果窝和表皮上的小斑点，衬布的褶皱顶上提几笔亮色。最后用钛白调一点点黄，点出<b>高光</b>。',
+        tip: '<span>高光要少：</span>一两笔就够，点多了反而不亮。',
+        build: r => {
+          const S = [];
+          for (let i = 0; i < 26; i++) { let x, y, k = 0; do { x = 40 + r() * 720; y = TE + 20 + r() * 360; k++; } while ((fold(x, y) < .88 || ap(x, y).a > 0 || shadowE(x, y) < 1.2) && k < 60);
+            const L2 = 40 + r() * 60; S.push({ k: 'brush', p: [x, y, x + Math.cos(.55) * L2 / 2, y + Math.sin(.55) * L2 / 2, x + Math.cos(.55) * L2, y + Math.sin(.55) * L2], w: 6 + r() * 5, c: '#b9c8da', c2: '#cfdbe8', c3: '#9eb0c6', a: .55, seed: r() * 1e9 | 0 }); }
+          S.push({ k: 'line', p: [355, 376, 400, 362, 445, 376], w: 7, c: '#5a1414', a: .55 });
+          for (let i = 0; i < 140; i++) { let x, y, s, k = 0; do { x = 200 + r() * 400; y = 350 + r() * 380; s = ap(x, y); k++; } while ((s.a < 1 || s.d < .05) && k < 40); S.push({ k: 'dot', x, y, r: 1.2 + r() * 1.8, c: '#f4c76a', a: .55 }); }
+          S.push({ k: 'line', p: [402, 374, 409, 348, 428, 318], w: 8, c: '#4a2e1c', a: .95 }, { k: 'line', p: [399, 372, 405, 350, 423, 320], w: 2.5, c: '#9a7048', a: .8 });
+          const hx = ACX + Hn[0] * AR * .98, hy = ACY + Hn[1] * AR * .98;
+          S.push({ k: 'brush', p: [hx - 22, hy + 10, hx, hy - 6, hx + 24, hy - 2], w: 24, c: '#f3ab78', c2: '#f7c39a', c3: '#e8955e', a: .45, seed: 3 });
+          for (let i = 0; i < 4; i++) S.push({ k: 'brush', p: [hx - 12 + i * 3, hy + 4 - i * 2, hx - 2 + i * 2, hy - 5 - i, hx + 10, hy - 2 + i], w: 9 - i, c: '#fff3e2', c2: '#ffffff', c3: '#f5e2c8', a: .95, seed: i + 9 });
+          return [{ ...Bt, grain: 0, strokes: S }];
+        } },
+      { title: '整体调整', tool: '大号笔 · 签名', cam: 'overview', focus: ['subject', 'backdrop'], ann: ['light', 'term', 'shadow', 'refl', 'hl'], ref: '虚实与空间',
+        text: '把苹果背光一侧的边缘和背景<b>融合</b>，受光一侧保持清晰。<b>边缘虚实</b>决定了空间感。最后压深接触点，签上名字。',
+        tip: '<span>眯眼看：</span>眯起眼睛看整体，哪里跳出来了，就把哪里收一收。',
+        build: r => {
+          const me = mm('edge', (x, y) => { const s = ap(x, y), k = Math.abs(s.dist - s.r); return k < 16 ? (1 - k / 16) * sm(.25, -.05, s.d) * .85 : 0; });
+          return [
+            { ...Bt, mask: me, strokes: brushes(r, { m: me, box: [180, 330, 640, 760], cell: 12, w: [10, 16], len: [22, 36], dir: tangent, col: (x, y) => mixc(y < TE ? wallCol(x, y) : clothCol(x, y), hex('#6b1515'), .5) }) },
+            { ...Bt, grain: 0, strokes: [{ k: 'brush', p: [330, 716, 400, 726, 478, 720], w: 9, c: '#2a2030', c2: '#3a2c40', c3: '#1c1520', a: .75, seed: 41 }, ...signature(640, 930, '#e9e1d2', 2.4)] }
+          ];
+        } }
+    ]
+  };
+}
+
+
+/* ================= 作品三：油画 · 青花瓷瓶与柠檬 ================= */
+function defOil() {
+  const VX = 350, VT = 250, VH = 390, TE = 560, LCX = 578, LCY = 668, LRX = 96, LRY = 58;
+  const L = n3([-.6, -.62, .45]), Hn = n3([L[0], L[1], L[2] + 1]), B = n3([.3, .85, .3]);
+  const rv = t => 46 + 104 * sm(.2, .58, t) - 60 * sm(.7, 1, t) + 12 * Math.exp(-(((t - .01) / .03) ** 2));
+  const vase0 = (x, y) => {
+    const t = (y - VT) / VH, tc = clamp(t, 0, 1), r = rv(tc), dx = x - VX;
+    const a = clamp((r - Math.abs(dx)) / 1.5 + .5, 0, 1) * clamp(t * VH / 1.5 + .5, 0, 1) * clamp((1 - t) * VH / 1.5 + .5, 0, 1);
+    const nx = clamp(dx / r, -.999, .999), nz = Math.sqrt(1 - nx * nx), dr = (rv(clamp(tc + .005, 0, 1)) - rv(clamp(tc - .005, 0, 1))) / (.01 * VH);
+    const n = n3([nx, -dr, nz]);
+    return { a, t: tc, nx, d: dot3(n, L), hl: dot3(n, Hn), rf: dot3(n, B) };
+  };
+  const lemon0 = (x, y) => {
+    const dx = (x - LCX) / LRX, dy = (y - LCY) / LRY, q = dx * dx + dy * dy, a = clamp((1 - Math.sqrt(q)) * LRY / 1.5 + .5, 0, 1);
+    const k = q > .998 ? Math.sqrt(.998 / q) : 1, n = n3([dx * k * .8, dy * k, Math.sqrt(Math.max(0, 1 - q * k * k))]);
+    return { a, d: dot3(n, L), hl: dot3(n, Hn), rf: dot3(n, B) };
+  };
+  // 蒙版都在同一批半分辨率格点上取样，缓存起来，避免每张蒙版重复算一遍形体
+  const Q = 4, FW = W / Q, FH = H / Q;
+  const field = (f, keys) => {
+    let arr = null; const sc = {}, nk = keys.length;
+    return (x, y) => {
+      if (x % Q !== 2 || y % Q !== 2 || x < 0 || y < 0 || x >= W || y >= H) return f(x, y);
+      if (!arr) { arr = keys.map(() => new Float32Array(FW * FH)); for (let j = 0; j < FH; j++) for (let i = 0; i < FW; i++) { const v = f(i * Q + 2, j * Q + 2); for (let n = 0; n < nk; n++) arr[n][j * FW + i] = v[keys[n]]; } }
+      const idx = (y >> 2) * FW + (x >> 2); for (let n = 0; n < nk; n++) sc[keys[n]] = arr[n][idx]; return sc;
+    };
+  };
+  const vase = field(vase0, ['a', 't', 'nx', 'd', 'hl', 'rf']), lemon = field(lemon0, ['a', 'd', 'hl', 'rf']);
+  const occ = (x, y) => Math.max(vase(x, y).a, lemon(x, y).a);
+  const glow = (x, y) => clamp(1 - Math.hypot(x - 170, y - 170) / 650, 0, 1);
+  const bgCol = (x, y) => mixc(hex('#1d1914'), hex('#6e5d3d'), Math.pow(glow(x, y), 1.6));
+  const tableCol = (x, y) => mixc(hex('#33251a'), hex('#8e6c46'), clamp(.8 - x / W * .55 - (y - TE) / (H - TE) * .35 + Math.sin(y * .09) * .04, 0, 1));
+  const blueAmt = s => {
+    const band = sm(.5, .53, s.t) * sm(.72, .69, s.t), motif = sm(.1, .55, Math.sin(Math.asin(s.nx) * 7 + Math.sin(s.t * 40) * 1.3));
+    const rings = [[.3, .007], [.48, .006], [.74, .006], [.79, .007]].reduce((a, [c, w]) => a + Math.exp(-(((s.t - c) / w) ** 2)), 0);
+    return clamp(band * motif + rings, 0, 1);
+  };
+  const vaseCol = (x, y) => {
+    const s = vase(x, y);
+    const por = chain([[-1, hex('#3a404e')], [-.3, hex('#5a6172')], [0, hex('#8a8f98')], [.3, hex('#c7c4bb')], [.65, hex('#e9e2d1')], [1, hex('#f6efdf')]], s.d);
+    const blu = chain([[-1, hex('#121a38')], [0, hex('#1f2d66')], [.6, hex('#34509a')], [1, hex('#4a68b0')]], s.d);
+    let c = mixc(por, blu, blueAmt(s));
+    if (s.d < 0) c = mixc(c, hex('#8a6a46'), sm(.3, .85, s.rf) * .35);
+    return c;
+  };
+  const lemonCol = (x, y) => chain([[-1, hex('#3e3a1a')], [-.25, hex('#7a6a1e')], [.1, hex('#c9a326')], [.5, hex('#efcf38')], [.85, hex('#f8e470')], [1, hex('#fbf0a0')]], lemon(x, y).d);
+  const vShadowE = (x, y) => { const u = x - 505, v = y - 612, c = Math.cos(.08), s = Math.sin(.08); return ((u * c - v * s) / 175) ** 2 + ((u * s + v * c) / 26) ** 2; };
+  const shadowAmt = (x, y) => (y > TE ? 1 : 0) * (1 - occ(x, y)) * clamp(sm(1, .45, vShadowE(x, y)) * .85 + sm(1, .4, ((x - 668) / 100) ** 2 + ((y - 718) / 14) ** 2) * .9 + Math.exp(-(((x - VX) / 95) ** 2 + ((y - 640) / 8) ** 2)) * .8, 0, 1);
+  const M = {}; const mm = (k, f) => M[k] || (M[k] = makeMask(f, Q));
+  const O = { tool: 'brush', grain: .22, tooth: 'weave' };
+  const profile = (side, c, w, a) => { const S = []; for (let k = 0; k < 4; k++) { const p = []; for (let i = 0; i <= 8; i++) { const t = clamp((k + i / 8) / 4, 0, 1); p.push(VX + side * rv(t), VT + t * VH); } S.push({ k: 'line', p, w, c, a }); } return S; };
+  return {
+    key: 'oil', name: '青花与柠檬', sub: '油画 · 古典静物的厚与薄', medium: '油画', paper: '#d8c9ab', weave: true,
+    counter: { label: '技法', items: [['薄涂底色', '#a8683a'], ['单色底稿', '#4a2e1c'], ['湿接湿', '#6e5d3d'], ['厚涂', '#f6efdf'], ['刮刀', '#c9c9c9'], ['罩染', '#6a4a2a']] },
+    idleTool: 'brush',
+    steps: [
+      { title: '准备材料', tool: '亚麻画布 · 猪鬃笔 · 刮刀 · 松节油', cam: 'tools', focus: ['palette', 'knife', 'brushes'], ann: [], ref: '先看静物',
+        text: '油画颜料干得慢，可以在画布上反复调和，还能堆得很厚。用<b>松节油</b>稀释可以薄涂，加<b>调色油</b>颜色更润。<b>猪鬃笔</b>硬，会留下笔痕；<b>刮刀</b>能把颜料像抹黄油一样抹上去。',
+        tip: '<span>肥盖瘦：</span>下层颜料少放油，越往上层油越多，画干了才不会开裂。' },
+      { title: '薄涂底色', tool: '熟赭 + 松节油 · 大号笔', cam: 'easel', focus: ['subject'], ann: [], gain: ['薄涂底色'], ref: '先看大关系',
+        text: '用松节油把<b>熟赭</b>调得很稀，薄薄罩满整张画布。白画布会让每块颜色都显得太暗，有了暖色的<b>底色</b>，明暗和冷暖都更好判断。',
+        tip: '<span>要薄：</span>薄到能透出亚麻布的纹理，几分钟就干。',
+        build: r => { const m = mm('all', () => 1); return [{ ...O, grain: .35, strokes: brushes(r, { m, cell: 70, w: [70, 100], len: [130, 210], dir: () => -.5 + (r() - .5) * .8, col: () => hex('#a8683a'), a: .3, kind: 'oil', h: 0 }) }]; } },
+      { title: '单色底稿', tool: '熟褐 · 小号笔', cam: 'easel', focus: ['subject', 'lemon'], ann: ['axis'], gain: ['单色底稿'], ref: '用一个颜色找明暗',
+        text: '用<b>熟褐</b>勾出瓷瓶、柠檬和桌面，再用同一个颜色把暗部铺一遍。先只用一个颜色解决<b>素描关系</b>，之后再想颜色。',
+        tip: '<span>就是素描：</span>这一步是用油画笔画的单色素描，前面学的五大调子全用得上。',
+        build: r => {
+          const m = mm('under', (x, y) => { const v = vase(x, y), l = lemon(x, y), o = 1 - occ(x, y);
+            return Math.max(v.a * sm(.25, -.1, v.d) * .85, l.a * sm(.2, -.1, l.d) * .7, shadowAmt(x, y) * .8, y < TE ? o * Math.pow(1 - glow(x, y), 1.2) * .7 : o * .25 * (y - TE) / (H - TE)); });
+          const c = '#4a2e1c';
+          return [
+            { ...O, grain: .15, strokes: [...profile(-1, c, 2.6, .75), ...profile(1, c, 2.6, .75),
+              ...arcStrokes(r, VX, VT + 2, 56, 12, 0, Math.PI * 2, { c, a: .7, w: 2.4, pieces: 4 }), ...arcStrokes(r, VX, 640, 90, 16, 0, Math.PI, { c, a: .7, w: 2.4, pieces: 3 }),
+              ...arcStrokes(r, LCX, LCY, LRX, LRY, 0, Math.PI * 2, { c, a: .7, w: 2.4, pieces: 5 }), ...sketchLine(r, 0, TE, W, TE, { c, a: .55, w: 2.2, passes: 1 })] },
+            { ...O, mask: m, strokes: brushes(r, { m, cell: 26, w: [24, 36], len: [40, 80], dir: () => -.7, col: () => hex('#4a2e1c'), a: .55, kind: 'oil', h: 0 }) }
+          ];
+        } },
+      { title: '背景 · 湿接湿', tool: '熟褐 · 土黄 · 象牙黑', cam: 'easel', focus: ['backdrop', 'lamp'], ann: ['warm', 'cool'], gain: ['湿接湿'], ref: '暗背景里的光',
+        text: '古典静物常用深色背景：靠近灯的左上方偏亮偏暖，越往右下越暗。趁颜料还湿，一块接一块地画，让相邻的颜色在画布上直接融在一起，这叫<b>湿接湿</b>。',
+        tip: '<span>笔触绕着光：</span>背景的笔触顺着光晕打圈，光感会更自然。',
+        build: r => { const m = mm('obg', (x, y) => (1 - occ(x, y)) * sm(TE + 3, TE - 3, y));
+          return [{ ...O, mask: m, strokes: brushes(r, { m, box: [0, 0, W, TE + 20], cell: 24, w: [30, 46], len: [50, 100], dir: (x, y) => Math.atan2(y - 170, x - 170) + Math.PI / 2, col: bgCol, kind: 'oil', h: .2 }) }]; } },
+      { title: '桌面', tool: '熟赭 · 土黄 · 熟褐', cam: 'easel', focus: ['cloth'], ann: [], ref: '平的面横着画',
+        text: '桌面受光的左边暖而亮，往右、往前逐渐变暗。横向用笔，才能表现出桌面是<b>平</b>的。',
+        tip: '<span>近实远虚：</span>前面的桌沿颜色更饱和，靠墙的部分更灰。',
+        build: r => { const m = mm('otable', (x, y) => (1 - occ(x, y)) * sm(TE - 3, TE + 3, y));
+          return [{ ...O, mask: m, strokes: brushes(r, { m, box: [0, TE - 20, W, H], cell: 22, w: [24, 36], len: [60, 110], dir: () => .03, col: tableCol, kind: 'oil', h: .25 }) }]; } },
+      { title: '青花瓷瓶', tool: '钛白 · 群青 · 象牙黑', cam: 'still', focus: ['subject', 'lamp'], ann: ['light', 'term'], ref: '白瓷不是白的',
+        text: '白瓷不是白色：受光面偏暖黄，背光面偏冷灰蓝。<b>青花</b>纹样也跟着明暗走，暗部的蓝要压深，不能一个蓝色画到底。',
+        tip: '<span>先大后小：</span>先把瓶子的明暗大关系铺准，花纹顺着瓶身的弧度走。',
+        build: r => {
+          const md = mm('vdark', (x, y) => { const v = vase(x, y); return v.a * sm(.25, 0, v.d); }), ml = mm('vlite', (x, y) => { const v = vase(x, y); return v.a * sm(-.1, .12, v.d); });
+          const dir = (x, y) => .04 + vase(x, y).nx * .3;
+          return [
+            { ...O, mask: md, strokes: brushes(r, { m: md, box: [180, 230, 520, 660], cell: 12, w: [12, 18], len: [22, 38], dir, col: vaseCol, kind: 'oil', h: .2 }) },
+            { ...O, mask: ml, strokes: brushes(r, { m: ml, box: [180, 230, 520, 660], cell: 11, w: [11, 17], len: [20, 34], dir, col: vaseCol, kind: 'oil', h: .3 }) },
+            { ...O, grain: 0, strokes: arcStrokes(r, VX, VT + 3, 44, 8, Math.PI * .05, Math.PI * 1.95, { c: '#17130f', a: .9, w: 7, pieces: 3, j: .6 }) }
+          ];
+        } },
+      { title: '柠檬', tool: '柠檬黄 · 土黄 · 熟褐', cam: 'easel', focus: ['lemon'], ann: ['light', 'dark'], ref: '粗糙的表皮',
+        text: '柠檬亮部用<b>柠檬黄</b>加一点白；暗部不加黑，用土黄和熟褐，再带一点绿，颜色才不会脏。笔触绕着柠檬的圆走，颜料比画瓷瓶时更厚。',
+        tip: '<span>质感对比：</span>短而厚的笔触画柠檬皮，和光滑的瓷器放在一起，两种质感互相衬托。',
+        build: r => { const m = mm('olemon', (x, y) => lemon(x, y).a);
+          return [{ ...O, mask: m, strokes: brushes(r, { m, box: [470, 600, 690, 740], cell: 11, w: [13, 19], len: [20, 34], dir: (x, y) => Math.atan2((y - LCY) / LRY, (x - LCX) / LRX) + Math.PI / 2, col: lemonCol, kind: 'oil', h: .55 }) }]; } },
+      { title: '投影与环境色', tool: '熟褐 · 群青', cam: 'still', focus: ['cloth', 'subject'], ann: ['shadow', 'refl', 'bounce'], ref: '光滑的东西会映色',
+        text: '画出瓷瓶和柠檬在桌面上的<b>投影</b>。瓷器表面光滑，会映出周围的颜色：瓶底有桌面暖褐色的<b>反光</b>，靠近柠檬的一侧还会染上一点黄。',
+        tip: '<span>越光滑越明显：</span>瓷器上环境色很清楚，粗糙的柠檬上几乎看不到。',
+        build: r => {
+          const ms = mm('oshadow', shadowAmt), mr = mm('orefl', (x, y) => { const v = vase(x, y); return v.a * sm(0, -.3, v.d) * sm(.2, .8, v.rf) * .8; });
+          const mb = mm('obounce', (x, y) => { const v = vase(x, y); return v.a * (v.d < .3 ? 1 : 0) * Math.exp(-(((x - 455) / 45) ** 2 + ((y - 600) / 45) ** 2)) * .7; });
+          return [
+            { ...O, mask: ms, strokes: brushes(r, { m: ms, box: [240, 580, 800, 740], cell: 16, w: [18, 26], len: [40, 70], dir: () => .03, col: (x, y) => mixc(tableCol(x, y), hex('#160f0a'), .62), kind: 'oil', h: .15 }) },
+            { ...O, mask: mr, strokes: brushes(r, { m: mr, box: [250, 420, 520, 650], cell: 12, w: [10, 16], len: [20, 34], dir: () => .1, col: () => hex('#7a5c40'), kind: 'oil', h: .1 }) },
+            { ...O, opacity: .6, mask: mb, strokes: brushes(r, { m: mb, box: [380, 520, 520, 660], cell: 12, w: [10, 16], len: [20, 34], dir: () => 1.4, col: () => hex('#a89040'), kind: 'oil', h: .1 }) }
+          ];
+        } },
+      { title: '厚涂高光', tool: '刮刀 · 钛白', cam: 'easel', focus: ['knife', 'subject'], ann: ['light', 'hl'], gain: ['厚涂', '刮刀'], ref: '堆起来的亮',
+        text: '用<b>刮刀</b>挑起不加油的浓稠钛白，在瓷瓶的高光处一刀抹上去；柠檬的亮点用笔尖点厚。颜料堆起来的<b>肌理</b>会在真实的光下反光，这是油画独有的质感。',
+        tip: '<span>只在亮处厚：</span>亮部厚、暗部薄。暗部堆厚了会反光发亮，空间就乱了。',
+        build: r => {
+          const S = [], nxh = Hn[0] / Math.hypot(Hn[0], Hn[2]);
+          for (const [t0, t1, w] of [[.33, .47, 9], [.5, .63, 13], [.65, .73, 8]]) { const p = []; for (let i = 0; i <= 6; i++) { const t = lerp(t0, t1, i / 6); p.push(VX + rv(t) * nxh + (r() - .5) * 3, VT + t * VH); } S.push(oilS(p, w, hex('#fbf6ea'), .95, 1)); }
+          for (let i = 0; i < 5; i++) { const t = .5 + r() * .13, y = VT + t * VH, x = VX + rv(t) * nxh + (r() - .5) * 18; S.push(oilS([x, y, x + 2, y + 6, x + 1, y + 11], 4 + r() * 3, hex('#f3ead8'), .8, .8)); }
+          S.push(oilS([VX - 46, VT + 6, VX - 30, VT - 4, VX - 6, VT - 8], 5, hex('#efe6d2'), .9, .8));
+          for (let i = 0; i < 4; i++) { const t = .12 + i * .03, y = VT + t * VH, x = VX + rv(t) * nxh; S.push(oilS([x, y, x + 1, y + 8, x, y + 14], 6, hex('#e9e2d1'), .85, .8)); }
+          const hx = LCX + Hn[0] * LRX * .72, hy = LCY + Hn[1] * LRY * .72;
+          for (let i = 0; i < 7; i++) { const x = hx + (r() - .5) * 22, y = hy + (r() - .5) * 12; S.push(oilS([x, y, x + 5, y - 2, x + 10, y - 1], 6 + r() * 5, hex(i < 2 ? '#fffbe0' : '#fbe98a'), .95, 1)); }
+          for (let i = 0; i < 90; i++) { let x, y, l, k = 0; do { x = LCX + (r() - .5) * LRX * 1.8; y = LCY + (r() - .5) * LRY * 1.8; l = lemon(x, y); k++; } while (l.a < 1 && k < 30); S.push({ k: 'dot', x, y, r: 1 + r() * 1.6, c: l.d > .2 ? '#fff2a0' : '#6a5a18', a: .55 }); }
+          for (let i = 0; i < 6; i++) { const x = 40 + i * 70 + r() * 30, y = TE + 6 + r() * 6; S.push(oilS([x, y, x + 30, y + 1, x + 60, y], 7, hex('#a88a5e'), .8, .7, 'butt')); }
+          return [{ ...O, tool: 'knife', grain: 0, strokes: S }];
+        } },
+      { title: '罩染与调整', tool: '透明熟赭 · 调色油', cam: 'overview', focus: ['subject', 'backdrop'], ann: ['light', 'term', 'shadow', 'refl', 'hl'], gain: ['罩染'], ref: '暗部更深更透',
+        text: '等颜料干透，用调色油把透明颜色调稀，薄薄地<b>罩染</b>在暗部和背景上，暗部会更深、更透、更有光泽。最后签名。',
+        tip: '<span>透明色才能罩：</span>熟赭、群青这类透明颜料适合罩染；钛白不透明，不能拿来罩。',
+        build: r => {
+          const mg = mm('glaze', (x, y) => { const o = 1 - occ(x, y); return clamp(o * (y < TE ? (1 - glow(x, y)) * .8 : .5 * (y - TE) / (H - TE)) + shadowAmt(x, y) * .5, 0, 1); });
+          const mc = mm('cglaze', (x, y) => { const v = vase(x, y); return v.a * sm(.1, -.3, v.d) * .8; });
+          return [
+            { tool: 'brush', blend: 'multiply', mask: mg, strokes: brushes(r, { m: mg, cell: 50, w: [60, 90], len: [100, 180], dir: () => -.4 + (r() - .5) * .6, col: () => hex('#7a5232'), a: .45, kind: 'oil', h: 0 }) },
+            { tool: 'brush', blend: 'multiply', mask: mc, strokes: brushes(r, { m: mc, box: [180, 230, 520, 660], cell: 20, w: [20, 30], len: [40, 70], dir: () => 1.5, col: () => hex('#7a88b8'), a: .4, kind: 'oil', h: 0 }) },
+            { tool: 'brush', grain: 0, strokes: signature(640, 930, '#c8a060', 2.4) }
+          ];
+        } }
+    ]
+  };
+}
+
+/* ================= 运行时 ================= */
+const DEFS = { sketch: defSketch(), gouache: defGouache(), oil: defOil() };
+const RT = {};
+function runtime(key) {
+  if (RT[key]) return RT[key];
+  const def = DEFS[key], paper = makePaper(def.paper, { sketch: 11, gouache: 23, oil: 37 }[key], def.weave);
+  const s0 = mk(); ctx2(s0).drawImage(paper, 0, 0);
+  return (RT[key] = { def, paper, snaps: [s0], passes: [], user: null });
+}
+function passesOf(rt, k) {
+  if (!rt.passes[k]) { const st = rt.def.steps[k]; rt.passes[k] = st.build ? st.build(rngOf(1000 + k * 97 + ({ sketch: 0, gouache: 5, oil: 9 }[rt.def.key]))) : []; }
+  return rt.passes[k];
+}
+const strokesIn = (rt, k) => passesOf(rt, k).reduce((s, p) => s + p.strokes.length, 0);
+const L2 = mk(), T2 = mk();
+function bakePass(c, pass, paper) { const l = ctx2(L2); l.clearRect(0, 0, W, H); for (const s of pass.strokes) drawStroke(l, s); compositePass(c, pass, L2, T2, paper); }
+function ensureSnap(rt, k) {
+  for (let i = 1; i <= k; i++) if (!rt.snaps[i]) {
+    const c = mk(), x = ctx2(c); x.drawImage(rt.snaps[i - 1], 0, 0);
+    for (const p of passesOf(rt, i)) bakePass(x, p, rt.paper);
+    rt.snaps[i] = c;
+  }
+  return rt.snaps[k];
+}
+
+const out = mk(), octx = ctx2(out);
+const layer = mk(), lctx = ctx2(layer), tmp = mk(), stepBase = mk(), sbctx = ctx2(stepBase);
+const view2d = $('view2d'), v2 = ctx2(view2d);
+let dirty = true;
+function markDirty() { dirty = true; if (artTex) artTex.needsUpdate = true; }
+
+/* ================= 3D 画室 ================= */
+const gl = $('gl');
+const renderer = new THREE.WebGLRenderer({ canvas: gl, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.1;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#18130f'); scene.fog = new THREE.Fog('#18130f', 7, 15);
+const camera = new THREE.PerspectiveCamera(40, 1, .05, 40);
+const controls = new OrbitControls(camera, gl);
+controls.enableDamping = true; controls.minDistance = .45; controls.maxDistance = 6.5; controls.maxPolarAngle = 1.52; controls.autoRotateSpeed = .6;
+
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: .8, ...o });
+function mesh(geo, mat, pos, parent = scene, cast = true, recv = true) { const m = new THREE.Mesh(geo, mat); if (pos) m.position.copy(pos); m.castShadow = cast; m.receiveShadow = recv; parent.add(m); return m; }
+function rod(a, b, r, mat, parent = scene) { const v = new THREE.Vector3().subVectors(b, a), m = mesh(new THREE.CylinderGeometry(r, r, v.length(), 10), mat, a.clone().addScaledVector(v, .5), parent); m.quaternion.setFromUnitVectors(V(0, 1, 0), v.normalize()); return m; }
+function canvasTex(w, h, draw, rep) { const c = mk(w, h); draw(ctx2(c), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]); } t.anisotropy = 8; return t; }
+
+// 地板
+const woodT = canvasTex(1024, 1024, (x, w, h) => {
+  const r = rngOf(5), rows = 8;
+  for (let i = 0; i < rows; i++) {
+    let off = r() * w; const y0 = i * h / rows;
+    for (let k = -1; k < 3; k++) {
+      const c = mixc(hex('#7a5537'), hex('#a27650'), r());
+      x.fillStyle = rgb(c); x.fillRect(off + k * w * .6, y0, w * .6, h / rows);
+      x.fillStyle = 'rgba(30,18,10,.6)'; x.fillRect(off + k * w * .6, y0, 2, h / rows);
+    }
+    for (let g = 0; g < 26; g++) { x.strokeStyle = `rgba(50,30,15,${.05 + r() * .08})`; x.lineWidth = 1 + r() * 2; x.beginPath(); const yy = y0 + r() * h / rows; x.moveTo(0, yy); for (let s = 0; s <= w; s += 32) x.lineTo(s, yy + Math.sin(s * .01 + g) * 3); x.stroke(); }
+    x.fillStyle = 'rgba(20,12,6,.7)'; x.fillRect(0, y0, w, 2);
+  }
+}, [3, 3]);
+mesh(new THREE.PlaneGeometry(9, 9), std('#ffffff', { map: woodT, roughness: .55 }), V(0, 0, 0), scene, false).rotation.x = -Math.PI / 2;
+// 墙
+const wallT = canvasTex(512, 512, (x, w, h) => { const r = rngOf(9); x.fillStyle = '#8a7258'; x.fillRect(0, 0, w, h); for (let i = 0; i < 9000; i++) { x.fillStyle = `rgba(${r() < .5 ? '255,240,220' : '40,25,10'},${r() * .05})`; x.fillRect(r() * w, r() * h, 2 + r() * 5, 2 + r() * 5); } }, [3, 1.5]);
+const wallM = std('#ffffff', { map: wallT, roughness: .95 });
+mesh(new THREE.PlaneGeometry(9, 3.4), wallM, V(0, 1.7, -3), scene, false);
+const lw = mesh(new THREE.PlaneGeometry(9, 3.4), wallM, V(-3.3, 1.7, 0), scene, false); lw.rotation.y = Math.PI / 2;
+mesh(new THREE.BoxGeometry(9, .12, .03), std('#3a2a1e'), V(0, .06, -2.985), scene, false);
+// 窗
+const winT = canvasTex(256, 256, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#5f7fb8'); g.addColorStop(.7, '#9fb9df'); g.addColorStop(1, '#d9c6a8'); x.fillStyle = g; x.fillRect(0, 0, w, h); });
+const win = new THREE.Group(); win.position.set(-3.28, 1.75, -.7); win.rotation.y = Math.PI / 2; scene.add(win);
+mesh(new THREE.PlaneGeometry(1.5, 1.3), new THREE.MeshBasicMaterial({ map: winT }), V(0, 0, 0), win, false, false);
+for (const [w, h, x, y] of [[1.62, .06, 0, .65], [1.62, .06, 0, -.65], [.06, 1.36, .78, 0], [.06, 1.36, -.78, 0], [.04, 1.3, 0, 0], [1.5, .04, 0, .1]]) mesh(new THREE.BoxGeometry(w, h, .05), std('#2b2119'), V(x, y, .02), win, false);
+// 地毯
+const rugT = canvasTex(512, 384, (x, w, h) => { x.fillStyle = '#c4ab86'; x.fillRect(0, 0, w, h); const b = [['#6d7a55', 10], ['#c4ab86', 6], ['#a4563a', 6], ['#c4ab86', 10]]; let o = 0; for (const [c, s] of b) { x.strokeStyle = c; x.lineWidth = s; x.strokeRect(o + s / 2, o + s / 2, w - o * 2 - s, h - o * 2 - s); o += s; } const r = rngOf(3); for (let i = 0; i < 4000; i++) { x.fillStyle = `rgba(60,40,20,${r() * .06})`; x.fillRect(r() * w, r() * h, 2, 2); } });
+mesh(new THREE.PlaneGeometry(2.6, 1.9), std('#ffffff', { map: rugT, roughness: 1 }), V(-.15, .004, .55), scene, false).rotation.x = -Math.PI / 2;
+
+// 静物台 + 背景板
+const stand = mesh(new THREE.BoxGeometry(.7, .9, .6), std('#5c4636', { roughness: .7 }), V(.2, .45, -1.2));
+const backdropM = std('#4a4a4c', { roughness: .95 });
+const backdrop = mesh(new THREE.BoxGeometry(.95, 1.05, .03), backdropM, V(.2, 1.42, -1.53));
+const clothM = std('#bdb6aa', { roughness: .95, side: THREE.DoubleSide });
+function makeCloth() {
+  const path = [[-1.5, .915], [-1.2, .912], [-.93, .913], [-.885, .88], [-.875, .75], [-.87, .32]];
+  const lens = [0]; for (let i = 1; i < path.length; i++) lens.push(lens[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+  const total = lens[lens.length - 1], su = 46, sv = 70, pos = [], uv = [], idx = [];
+  const at = s => { let i = 1; while (i < lens.length - 1 && lens[i] < s) i++; const t = (s - lens[i - 1]) / (lens[i] - lens[i - 1]); const a = path[i - 1], b = path[i]; const z = lerp(a[0], b[0], t), y = lerp(a[1], b[1], t); const dz = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dz, dy); return [z, y, -dy / l, dz / l, y]; };
+  for (let j = 0; j <= sv; j++) { const s = j / sv * total, [z, y, nz, ny] = at(s); const hang = y < .89 ? 1 : .08;
+    for (let i = 0; i <= su; i++) { const u = i / su, x = lerp(-.18, .58, u); const f = (Math.sin(u * 15 + s * 4) * .011 + Math.sin(u * 5.3 - s * 2.2) * .016) * hang;
+      const b = hang < 1 ? .002 : .018; pos.push(x, y + ny * (f + b), z + nz * (f + b)); uv.push(u, 1 - s / total); } }
+  for (let j = 0; j < sv; j++) for (let i = 0; i < su; i++) { const a = j * (su + 1) + i, b = a + su + 1; idx.push(a, b, a + 1, b, b + 1, a + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
+const cloth = mesh(makeCloth(), clothM, null);
+
+// 主体：石膏球 / 苹果
+const subjectPos = V(.2, 1.045, -1.2);
+const sphere = mesh(new THREE.SphereGeometry(.13, 64, 48), std('#f2efe8', { roughness: .92 }), subjectPos.clone());
+const apple = new THREE.Group(); scene.add(apple);
+{ const R3 = .12, pts = [];
+  for (let i = 0; i <= 48; i++) { const t = i / 48 * Math.PI, s = Math.sin(t), c = -Math.cos(t); const pole = Math.exp(-((s / .28) ** 2)); let y = R3 * c * .9 + (c > 0 ? -R3 * .28 * pole : R3 * .12 * pole); pts.push(new THREE.Vector2(Math.max(.0004, R3 * s * (1 + .08 * c)), y)); }
+  const body = mesh(new THREE.LatheGeometry(pts, 64), std('#c3301f', { roughness: .38, metalness: 0 }), V(0, 0, 0), apple);
+  body.material.side = THREE.DoubleSide;
+  const stem = rod(V(0, .07, 0), V(.012, .13, .004), .0045, std('#4a2e1c'), apple);
+  apple.position.set(.2, .913 + R3 * .78, -1.2); apple.rotation.y = .6; apple.userData = { R: R3, stemTip: V(.012, .13, .004) }; }
+const oilGroup = new THREE.Group(); oilGroup.position.set(.13, .913, -1.27); scene.add(oilGroup);
+const VASE_H = .26, VASE_R = .085, vaseCenter = V(.13, .913 + VASE_H * .38, -1.27), lemonPos = V(.33, .955, -1.08);
+{ const rvm = t => (46 + 104 * sm(.2, .58, t) - 60 * sm(.7, 1, t) + 12 * Math.exp(-(((t - .01) / .03) ** 2))) / 150 * VASE_R;
+  const pts = [new THREE.Vector2(0, 0)];
+  for (let i = 0; i <= 60; i++) { const t = 1 - i / 60; pts.push(new THREE.Vector2(rvm(t), (1 - t) * VASE_H)); }
+  pts.push(new THREE.Vector2(rvm(0) * .82, VASE_H - .004), new THREE.Vector2(rvm(0) * .78, VASE_H - .04));
+  // 青花纹样：v 从瓶底(0)到瓶口(1)，t = 1 - v
+  const vt = canvasTex(512, 256, (x, w, h) => {
+    const id = x.createImageData(w, h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const t = j / h * .97, ph = i / w * Math.PI * 2;
+      const band = sm(.5, .53, t) * sm(.72, .69, t) * sm(.1, .55, Math.sin(ph * 7 + Math.sin(t * 40) * 1.3));
+      const rings = [[.3, .007], [.48, .006], [.74, .006], [.79, .007]].reduce((a, [c, ww]) => a + Math.exp(-(((t - c) / ww) ** 2)), 0);
+      const k = clamp(band + rings, 0, 1), c = mixc(hex('#f3efe6'), hex('#24357a'), k), o = (j * w + i) * 4;
+      id.data[o] = c[0]; id.data[o + 1] = c[1]; id.data[o + 2] = c[2]; id.data[o + 3] = 255;
+    }
+    x.putImageData(id, 0, 0);
+  });
+  mesh(new THREE.LatheGeometry(pts, 72), new THREE.MeshStandardMaterial({ map: vt, roughness: .16, side: THREE.DoubleSide }), V(0, 0, 0), oilGroup);
+  const lem = new THREE.Group(); lem.position.copy(lemonPos).sub(oilGroup.position); lem.rotation.y = .35; oilGroup.add(lem);
+  const lm = std('#e8c62a', { roughness: .6 });
+  mesh(new THREE.SphereGeometry(.045, 40, 28), lm, V(0, 0, 0), lem).scale.set(1.5, .92, 1);
+  for (const sgn of [-1, 1]) { const tip = mesh(new THREE.ConeGeometry(.012, .022, 16), lm, V(sgn * .072, 0, 0), lem); tip.rotation.z = -sgn * Math.PI / 2; }
+}
+oilGroup.visible = false;
+
+// 灯
+const lampPos = V(-.52, 1.95, -.52);
+const lamp = new THREE.Group(); scene.add(lamp);
+{ const blk = std('#1f1b18', { roughness: .5, metalness: .4 });
+  for (let i = 0; i < 3; i++) { const a = i * 2.1 + .3; rod(V(lampPos.x + Math.cos(a) * .32, 0, lampPos.z + Math.sin(a) * .32), V(lampPos.x, 1.0, lampPos.z), .011, blk, lamp); }
+  rod(V(lampPos.x, 1.0, lampPos.z), V(lampPos.x, 1.88, lampPos.z), .013, blk, lamp);
+  const head = new THREE.Group(); head.position.copy(lampPos); lamp.add(head); head.lookAt(subjectPos);
+  const shade = mesh(new THREE.CylinderGeometry(.05, .13, .2, 28, 1, true), std('#24201c', { side: THREE.DoubleSide, roughness: .4, metalness: .5 }), V(0, 0, 0), head, true, false); shade.rotation.x = Math.PI / 2;
+  mesh(new THREE.SphereGeometry(.045, 16, 12), new THREE.MeshBasicMaterial({ color: '#fff3d6' }), V(0, 0, .02), head, false, false); }
+const spot = new THREE.SpotLight('#ffd9a8', 34, 7, .5, .5, 2);
+spot.position.copy(lampPos).add(V(.03, -.03, .03)); spot.target.position.copy(subjectPos); scene.add(spot, spot.target);
+spot.castShadow = true; spot.shadow.mapSize.set(2048, 2048); spot.shadow.bias = -.0003; spot.shadow.normalBias = .02; spot.shadow.camera.near = .2; spot.shadow.camera.far = 5;
+scene.add(new THREE.HemisphereLight('#ffe7c9', '#2a1d14', .5));
+const winLight = new THREE.DirectionalLight('#9fb8ff', .9); winLight.position.set(-4, 3, -.4); winLight.target.position.set(0, .6, -.3); scene.add(winLight, winLight.target);
+const warm1 = new THREE.PointLight('#ffb36b', 3.2, 6, 2); warm1.position.set(1.1, 2.1, 1.4); scene.add(warm1);
+const warm2 = new THREE.PointLight('#ff9d4d', 2.6, 3.5, 2); warm2.position.set(-2.2, 2.3, -2.5); scene.add(warm2);
+const easelLamp = new THREE.PointLight('#fff1de', 2.2, 3, 2); easelLamp.position.set(-.15, 1.95, .95); scene.add(easelLamp);
+
+// 画架 + 画纸
+const easel = new THREE.Group(); easel.position.set(-.55, 0, .25); easel.rotation.y = .45; scene.add(easel);
+const woodM = std('#9c6b42', { roughness: .65 });
+rod(V(-.34, 0, .12), V(-.05, 1.78, -.02), .017, woodM, easel); rod(V(.34, 0, .12), V(.05, 1.78, -.02), .017, woodM, easel);
+rod(V(0, 0, -.62), V(0, 1.66, -.06), .015, woodM, easel); rod(V(0, .5, -.02), V(0, 1.82, -.035), .019, woodM, easel);
+mesh(new THREE.BoxGeometry(.54, .025, .03), woodM, V(0, .55, .065), easel);
+const ledge = mesh(new THREE.BoxGeometry(.72, .025, .085), woodM, V(0, .86, .07), easel);
+mesh(new THREE.BoxGeometry(.09, .045, .05), woodM, V(0, 1.6, .045), easel);
+const artTex = new THREE.CanvasTexture(out); artTex.colorSpace = THREE.SRGBColorSpace; artTex.anisotropy = 8;
+const boardSide = std('#d9cdb8', { roughness: .9 });
+const artMat = new THREE.MeshStandardMaterial({ map: artTex, roughness: .95, emissive: '#ffffff', emissiveMap: artTex, emissiveIntensity: .32 });
+const board = mesh(new THREE.BoxGeometry(.56, .7, .016), [boardSide, boardSide, boardSide, boardSide, artMat, std('#7a6650')], V(0, 1.223, .06), easel);
+board.rotation.x = -.075;
+const BW = .56, BH = .7;
+function boardPoint(u, v, off = .009) { return board.localToWorld(V((u - .5) * BW, (.5 - v) * BH, off)); }
+
+// 边桌 + 工具
+const side = new THREE.Group(); side.position.set(.62, 0, .78); side.rotation.y = -.35; scene.add(side);
+{ const tm = std('#6b4a33', { roughness: .6 });
+  mesh(new THREE.BoxGeometry(.64, .03, .42), tm, V(0, .72, 0), side);
+  for (const [x, z] of [[-.29, -.18], [.29, -.18], [-.29, .18], [.29, .18]]) rod(V(x, 0, z), V(x, .71, z), .014, tm, side); }
+const pencils = new THREE.Group(); pencils.position.set(-.18, .743, .06); side.add(pencils);
+const pencilAnchors = [];
+['2H', 'HB', '4B', '8B'].forEach((g, i) => { const p = new THREE.Group(); p.position.set(i * .028, 0, 0); pencils.add(p);
+  const body = mesh(new THREE.CylinderGeometry(.0045, .0045, .17, 6), std(['#3e6a4b', '#2f5a3c', '#284c34', '#1f3d2a'][i], { roughness: .5 }), V(0, 0, 0), p); body.rotation.x = Math.PI / 2;
+  const tip = mesh(new THREE.ConeGeometry(.0045, .02, 6), std('#e3c49a'), V(0, 0, -.095), p); tip.rotation.x = -Math.PI / 2;
+  pencilAnchors.push({ text: g, obj: p }); });
+const eraserObj = mesh(new THREE.BoxGeometry(.035, .014, .022), std('#9aa0a6', { roughness: .95 }), V(-.05, .744, -.06), side);
+const knifeObj = mesh(new THREE.BoxGeometry(.13, .008, .018), std('#e0b030', { roughness: .4 }), V(.0, .741, .14), side);
+const palette = new THREE.Group(); palette.position.set(.12, .74, -.02); side.add(palette);
+mesh(new THREE.CylinderGeometry(.13, .13, .008, 40), std('#efe7d6', { roughness: .4 }), V(0, 0, 0), palette).scale.set(1.25, 1, .85);
+const blobs = DEFS.gouache.counter.items.map(([n, c], i) => { const a = -2.6 + i * .52; const b = mesh(new THREE.SphereGeometry(.016, 14, 10), std(c, { roughness: .35 }), V(Math.cos(a) * .13, .008, Math.sin(a) * .09), palette); b.scale.y = .45; b.visible = false; return b; });
+const bucket = mesh(new THREE.CylinderGeometry(.06, .052, .11, 28, 1, true), std('#8aa3b8', { roughness: .3, metalness: .3, side: THREE.DoubleSide }), V(.23, .795, .13), side);
+mesh(new THREE.CircleGeometry(.058, 28), std('#5f7b8c', { roughness: .1 }), V(.23, .82, .13), side).rotation.x = -Math.PI / 2;
+const brushJar = new THREE.Group(); brushJar.position.set(.25, .74, -.13); side.add(brushJar);
+mesh(new THREE.CylinderGeometry(.04, .04, .1, 20), std('#4f5b4a', { roughness: .6 }), V(0, .05, 0), brushJar);
+for (let i = 0; i < 5; i++) rod(V((i - 2) * .012, .05, (i % 2) * .01), V((i - 2) * .03, .27 + (i % 3) * .02, (i % 2 - .5) * .04), .004, std(i % 2 ? '#a0522d' : '#2a2a2a'), brushJar);
+
+// 凳子、书架、石膏几何体、画框、植物
+{ const sm2 = std('#5a3d29', { roughness: .6 });
+  const st = new THREE.Group(); st.position.set(-.2, 0, 1.15); scene.add(st);
+  mesh(new THREE.CylinderGeometry(.17, .17, .04, 28), sm2, V(0, .5, 0), st);
+  for (let i = 0; i < 3; i++) { const a = i * 2.1; rod(V(Math.cos(a) * .17, 0, Math.sin(a) * .17), V(Math.cos(a) * .1, .49, Math.sin(a) * .1), .014, sm2, st); }
+  const shelfM = std('#4a3424', { roughness: .7 }), white = std('#eeeae2', { roughness: .9 });
+  for (const y of [.7, 1.2, 1.7, 2.2]) mesh(new THREE.BoxGeometry(1.5, .035, .32), shelfM, V(-2.15, y, -2.83));
+  for (const x of [-2.88, -1.42]) mesh(new THREE.BoxGeometry(.035, 1.6, .32), shelfM, V(x, 1.45, -2.83));
+  mesh(new THREE.BoxGeometry(.16, .16, .16), white, V(-2.6, .8, -2.8)).rotation.y = .5;
+  mesh(new THREE.ConeGeometry(.08, .22, 32), white, V(-2.3, .83, -2.8));
+  mesh(new THREE.CylinderGeometry(.07, .07, .2, 32), white, V(-2.0, .82, -2.8));
+  mesh(new THREE.ConeGeometry(.1, .2, 4), white, V(-1.7, 1.32, -2.8)).rotation.y = .4;
+  mesh(new THREE.SphereGeometry(.08, 32, 20), white, V(-2.4, 1.3, -2.8));
+  const r = rngOf(4); for (let i = 0; i < 12; i++) { const h = .18 + r() * .1; mesh(new THREE.BoxGeometry(.035 + r() * .02, h, .22), std(rgb(mixc(hex('#6d2c22'), hex('#c9a46a'), r()))), V(-2.8 + i * .05, 1.72 + h / 2, -2.82)); }
+  for (let i = 0; i < 8; i++) { const h = .2 + r() * .08; mesh(new THREE.BoxGeometry(.04, h, .22), std(rgb(mixc(hex('#2f4a5c'), hex('#b08a5a'), r()))), V(-2.0 + i * .055, 2.22 + h / 2, -2.82)); }
+  const art1 = canvasTex(256, 320, (x, w, h) => { const g = x.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#e9b06a'); g.addColorStop(.55, '#c8603c'); g.addColorStop(1, '#3d2b3a'); x.fillStyle = g; x.fillRect(0, 0, w, h); x.fillStyle = '#f6e3b5'; x.beginPath(); x.arc(w * .62, h * .4, 34, 0, 7); x.fill(); x.fillStyle = '#2b2030'; x.fillRect(0, h * .72, w, h); });
+  const art2 = canvasTex(256, 256, (x, w, h) => { x.fillStyle = '#efe9dc'; x.fillRect(0, 0, w, h); x.strokeStyle = '#3a3633'; x.lineWidth = 2; x.beginPath(); x.moveTo(70, 100); x.lineTo(140, 70); x.lineTo(200, 100); x.lineTo(130, 130); x.closePath(); x.moveTo(70, 100); x.lineTo(70, 190); x.lineTo(130, 220); x.lineTo(200, 190); x.lineTo(200, 100); x.moveTo(130, 130); x.lineTo(130, 220); x.stroke(); x.fillStyle = 'rgba(40,36,33,.45)'; x.beginPath(); x.moveTo(130, 130); x.lineTo(200, 100); x.lineTo(200, 190); x.lineTo(130, 220); x.fill(); });
+  for (const [t, w, h, x, y] of [[art1, .55, .7, .95, 1.75], [art2, .5, .5, 1.75, 1.6]]) { mesh(new THREE.BoxGeometry(w + .06, h + .06, .03), std('#2a1f17'), V(x, y, -2.98), scene, false); mesh(new THREE.PlaneGeometry(w, h), std('#ffffff', { map: t, roughness: .9 }), V(x, y, -2.96), scene, false); }
+  const pl = new THREE.Group(); pl.position.set(2.1, 0, -2.4); scene.add(pl);
+  mesh(new THREE.CylinderGeometry(.18, .14, .36, 24), std('#b0654a'), V(0, .18, 0), pl);
+  const leaf = std('#4f6b3c', { roughness: .7 }); const r2 = rngOf(8);
+  for (let i = 0; i < 14; i++) { const l = mesh(new THREE.SphereGeometry(.12, 12, 8), leaf, V((r2() - .5) * .4, .55 + r2() * .7, (r2() - .5) * .4), pl); l.scale.set(.5, 1.2, .2); l.rotation.set(r2() * 2, r2() * 3, r2() - .5); }
+}
+
+// 手里的工具：铅笔 / 橡皮 / 画笔（原点 = 笔尖，+Y 指向笔尾）
+function makeTool(kind) {
+  const g = new THREE.Group();
+  if (kind === 'pencil') { mesh(new THREE.ConeGeometry(.0048, .022, 6), std('#e3c49a'), V(0, .011, 0), g, true, false).rotation.x = Math.PI;
+    mesh(new THREE.CylinderGeometry(.0048, .0048, .16, 6), std('#2f5a3c', { roughness: .45 }), V(0, .102, 0), g, true, false);
+    mesh(new THREE.ConeGeometry(.0016, .006, 6), std('#202020'), V(0, .003, 0), g, false, false).rotation.x = Math.PI; }
+  if (kind === 'brush') { mesh(new THREE.ConeGeometry(.007, .03, 12), std('#2a1f18'), V(0, .015, 0), g, true, false).rotation.x = Math.PI;
+    mesh(new THREE.CylinderGeometry(.0075, .007, .03, 12), std('#c9c9c9', { metalness: .8, roughness: .3 }), V(0, .045, 0), g, true, false);
+    mesh(new THREE.CylinderGeometry(.0045, .007, .19, 12), std('#a0522d', { roughness: .4 }), V(0, .155, 0), g, true, false); }
+  if (kind === 'knife') { const steel = std('#cfd2d6', { metalness: .9, roughness: .25 });
+    mesh(new THREE.BoxGeometry(.024, .05, .0012), steel, V(0, .025, 0), g, true, false);
+    rod(V(0, .05, 0), V(0, .075, .012), .0018, steel, g);
+    mesh(new THREE.CylinderGeometry(.006, .005, .1, 12), std('#7a4a2a', { roughness: .45 }), V(0, .125, .012), g, true, false); }
+  if (kind === 'eraser') { mesh(new THREE.BoxGeometry(.03, .03, .018), std('#9aa0a6', { roughness: .95 }), V(0, .015, 0), g, true, false); }
+  g.scale.setScalar(1.5); g.visible = false; scene.add(g); return g;
+}
+const TOOLS = { pencil: makeTool('pencil'), brush: makeTool('brush'), eraser: makeTool('eraser'), knife: makeTool('knife') };
+let toolKind = 'pencil', toolTip = null, toolTarget = { pos: V(0, 0, 0), q: new THREE.Quaternion() };
+// 笔的姿态：toolLift 0 = 笔尖贴纸，1 = 抬起；toolDir = 运笔方向；toolStyle 决定握笔角度
+let toolLift = 1, toolDir = [1, 0], toolStyle = 'line', toolColor = '#3a2a1e';
+const LEAN = { line: .85, shade: .32, brush: .6, eraser: 1.8, knife: .5 };
+// 沿一笔走到 f（0..1）处的点和方向
+function pointOn(s, f) {
+  if (s.k === 'dot') return [s.x, s.y, 1, 0];
+  const p = s.p, segs = []; let tot = 0;
+  for (let i = 2; i < p.length; i += 2) { const l = Math.hypot(p[i] - p[i - 2], p[i + 1] - p[i - 1]); segs.push(l); tot += l; }
+  let d = f * tot;
+  for (let i = 0; i < segs.length; i++) {
+    if (d <= segs[i] || i === segs.length - 1) { const t = segs[i] ? clamp(d / segs[i], 0, 1) : 0, x0 = p[i * 2], y0 = p[i * 2 + 1], x1 = p[i * 2 + 2], y1 = p[i * 2 + 3], l = segs[i] || 1;
+      return [lerp(x0, x1, t), lerp(y0, y1, t), (x1 - x0) / l, (y1 - y0) / l]; }
+    d -= segs[i];
+  }
+  return [p[0], p[1], 1, 0];
+}
+
+/* 写生视角（小窗） */
+const refCanvas = $('refgl');
+const refR = new THREE.WebGLRenderer({ canvas: refCanvas, antialias: true });
+refR.setPixelRatio(Math.min(devicePixelRatio, 2)); refR.shadowMap.enabled = true; refR.shadowMap.type = THREE.PCFSoftShadowMap;
+refR.toneMapping = THREE.ACESFilmicToneMapping; refR.toneMappingExposure = 1.1;
+const refCam = new THREE.PerspectiveCamera(30, 4 / 3, .05, 20);
+refCam.position.set(.24, 1.2, -.12); refCam.lookAt(.2, 1.03, -1.2); refCam.layers.enable(1);
+
+const ACC = new THREE.Color('#e8a63f'), BLUE = new THREE.Color('#8fb3e0');
+const annGroup = {};
+function onLayer1(o) { o.traverse(c => c.layers.set(1)); scene.add(o); o.visible = false; return o; }
+function arrow(from, to, color) {
+  const g = new THREE.Group(), dir = new THREE.Vector3().subVectors(to, from), len = dir.length(); dir.normalize();
+  const m = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true });
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.004, .004, len - .04, 8), m); shaft.position.copy(from).addScaledVector(dir, (len - .04) / 2); shaft.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(.014, .04, 12), m); head.position.copy(to).addScaledVector(dir, -.02); head.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+  g.add(shaft, head); g.renderOrder = 10; return g;
+}
+let ANN_POS = {};
+function buildAnnotations(key) {
+  for (const k in annGroup) { scene.remove(annGroup[k]); }
+  for (const k in annGroup) delete annGroup[k];
+  const S = key === 'sketch' ? subjectPos.clone() : key === 'oil' ? vaseCenter.clone() : apple.position.clone().add(V(0, .01, 0)), r = { sketch: .13, gouache: .12, oil: VASE_R }[key];
+  const Lw = new THREE.Vector3().subVectors(spot.position, S).normalize(), Vw = new THREE.Vector3().subVectors(refCam.position, S).normalize();
+  const on = d => S.clone().addScaledVector(d.clone().normalize(), r * 1.02);
+  annGroup.light = onLayer1(arrow(S.clone().addScaledVector(Lw, r * 3.4), S.clone().addScaledVector(Lw, r * 1.25), ACC));
+  // 明暗交界线：垂直于光线方向的大圆
+  const U = new THREE.Vector3().crossVectors(Lw, V(0, 1, 0)).normalize(), W2 = new THREE.Vector3().crossVectors(Lw, U).normalize(), pts = [];
+  for (let i = 0; i < 96; i++) { const a = i / 96 * Math.PI * 2; pts.push(S.clone().addScaledVector(U, Math.cos(a) * r * 1.012).addScaledVector(W2, Math.sin(a) * r * 1.012).addScaledVector(Lw, -r * .1)); }
+  annGroup.term = onLayer1(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, true), 120, .0022, 6, true), new THREE.MeshBasicMaterial({ color: ACC })));
+  const hlP = on(Lw.clone().add(Vw));
+  annGroup.hl = onLayer1(new THREE.Mesh(new THREE.TorusGeometry(.016, .0018, 8, 32), new THREE.MeshBasicMaterial({ color: ACC, depthTest: false })));
+  annGroup.hl.position.copy(hlP); annGroup.hl.lookAt(refCam.position);
+  const reflTo = on(Lw.clone().multiplyScalar(-1).add(V(0, -.7, 0)).add(Vw.clone().multiplyScalar(.7)));
+  annGroup.refl = onLayer1(arrow(S.clone().add(V(r * 1.6, -r * .95, r * .5)), reflTo, BLUE));
+  annGroup.bounce = annGroup.refl;
+  const ax = new THREE.Group(); ax.position.copy(S); ax.lookAt(refCam.position);
+  const lm = new THREE.MeshBasicMaterial({ color: ACC, transparent: true, opacity: .9, depthTest: false });
+  ax.add(new THREE.Mesh(new THREE.TorusGeometry(r * 1.0, .0016, 6, 80), lm));
+  for (const rot of [0, Math.PI / 2]) { const l = new THREE.Mesh(new THREE.BoxGeometry(.0025, r * 2.5, .0025), lm); l.rotation.z = rot; ax.add(l); }
+  annGroup.axis = onLayer1(ax);
+  const horiz = V(-Lw.x, 0, -Lw.z).normalize();
+  ANN_POS = {
+    light: S.clone().addScaledVector(Lw, r * 2.6), term: on(Vw.clone().sub(Lw.clone().multiplyScalar(Vw.dot(Lw) - .1))), hl: hlP.clone().add(V(0, .03, 0)),
+    shadow: V(S.x, .915, S.z).addScaledVector(horiz, r * 1.9), refl: reflTo, dark: on(Lw.clone().multiplyScalar(-1.1).add(Vw).add(V(0, -.5, 0))), mid: on(Lw.clone().multiplyScalar(.45).add(Vw)),
+    axis: S.clone().add(V(0, r * 1.45, 0)), fold: V(S.x - .22, .92, S.z + .22), warm: V(S.x - .3, 1.55, -1.5), cool: V(S.x + .33, 1.55, -1.5),
+    bounce: key === 'oil' ? lemonPos.clone().add(V(-.02, .06, 0)) : V(S.x + .2, .92, S.z + .08), stem: S.clone().add(V(.02, r * 1.15, 0)), warm2: on(Lw.clone().add(Vw.clone().multiplyScalar(.5)))
+  };
+}
+const ANN_TEXT = { light: '光源方向', term: '明暗交界线', hl: '高光', shadow: '投影', refl: '反光', dark: '暗部', mid: '灰面', axis: '中心线', fold: '褶皱', warm: '暖 · 亮', cool: '冷 · 暗', bounce: '环境色', stem: '果柄', warm2: '暖色亮部' };
+const ALT = new Set(['refl', 'bounce', 'cool', 'dark']);
+
+/* 主画面标签 */
+const LABEL_SETS = {
+  sketch: () => [['subject', '石膏球体', subjectPos.clone().add(V(0, .2, 0))], ['cloth', '衬布', V(.4, .7, -.86)], ['backdrop', '背景板', V(.2, 1.85, -1.5)], ['lamp', '台灯 · 主光源', lampPos.clone().add(V(0, .16, 0))], ['easel', '画架', boardPoint(.5, -.12)],
+    ...pencilAnchors.map((p, i) => ['pencils', p.text, p.obj.getWorldPosition(V(0, 0, 0)).add(V(0, .03 + (i % 2) * .035, 0))]), ['eraser', '可塑橡皮', eraserObj.getWorldPosition(V(0, 0, 0)).add(V(0, .04, 0))], ['knife', '美工刀', knifeObj.getWorldPosition(V(0, 0, 0)).add(V(0, .03, 0))]],
+  oil: () => [['subject', '青花瓷瓶', vaseCenter.clone().add(V(0, .2, 0))], ['lemon', '柠檬', lemonPos.clone().add(V(0, .09, 0))], ['cloth', '桌布', V(.4, .7, -.86)], ['backdrop', '背景板', V(.2, 1.85, -1.5)], ['lamp', '台灯 · 主光源', lampPos.clone().add(V(0, .16, 0))], ['easel', '画架', boardPoint(.5, -.12)],
+    ['palette', '调色盘', palette.getWorldPosition(V(0, 0, 0)).add(V(0, .05, 0))], ['knife', '刮刀', knifeObj.getWorldPosition(V(0, 0, 0)).add(V(0, .03, 0))], ['brushes', '猪鬃笔', brushJar.getWorldPosition(V(0, 0, 0)).add(V(0, .33, 0))]],
+  gouache: () => [['subject', '苹果', apple.position.clone().add(V(0, .2, 0))], ['cloth', '蓝灰衬布', V(.4, .7, -.86)], ['backdrop', '背景板', V(.2, 1.85, -1.5)], ['lamp', '台灯 · 主光源', lampPos.clone().add(V(0, .16, 0))], ['easel', '画架', boardPoint(.5, -.12)],
+    ['palette', '调色盘', palette.getWorldPosition(V(0, 0, 0)).add(V(0, .05, 0))], ['bucket', '洗笔桶', bucket.getWorldPosition(V(0, 0, 0)).add(V(0, .1, 0))], ['brushes', '平头笔', brushJar.getWorldPosition(V(0, 0, 0)).add(V(0, .33, 0))]]
+};
+let labels = [];
+function buildLabels(key) {
+  const box = $('labels'); box.innerHTML = ''; scene.updateMatrixWorld(true);
+  labels = LABEL_SETS[key]().map(([id, text, pos]) => { const el = document.createElement('div'); el.className = 'tag'; el.textContent = text; box.appendChild(el); return { id, el, pos }; });
+}
+
+/* 相机机位 */
+scene.updateMatrixWorld(true);
+const CAMS = {
+  overview: { p: V(2.25, 1.85, 2.95), t: V(-.2, .95, -.45) },
+  tools: { p: V(1.35, 1.32, 1.75), t: V(.5, .76, .7) },
+  easel: { p: V(.3, 1.52, 1.75), t: V(-.6, 1.12, .05) },
+  still: { p: V(1.15, 1.45, .55), t: V(-.05, 1.0, -.95) }
+};
+let camTween = null;
+function setCam(name, instant) {
+  const c = CAMS[name] || CAMS.easel;
+  if (instant || REDUCED) { camera.position.copy(c.p); controls.target.copy(c.t); camTween = null; return; }
+  camTween = { p0: camera.position.clone(), t0: controls.target.clone(), p1: c.p.clone(), t1: c.t.clone(), s: performance.now(), d: 1500 };
+}
+controls.addEventListener('start', () => { camTween = null; });
+
+/* ================= 状态与界面 ================= */
+const S = { piece: 'sketch', step: 1, playing: false, view: 'room', paint: false, guide: false };
+let rt = runtime('sketch'), anim = null, playTimer = 0, lastGain = new Set();
+
+function swapPiece(key) {
+  S.piece = key; rt = runtime(key);
+  const isSk = key === 'sketch';
+  sphere.visible = isSk; apple.visible = key === 'gouache'; oilGroup.visible = key === 'oil';
+  backdropM.color.set({ sketch: '#4a4a4c', gouache: '#7d8470', oil: '#2e2822' }[key]); clothM.color.set({ sketch: '#bdb6aa', gouache: '#6f86a3', oil: '#7a5f3e' }[key]);
+  // 油画的画面有厚度：用画面本身做凹凸贴图，亮的厚涂处会鼓起来、在灯下发亮
+  artMat.bumpMap = key === 'oil' ? artTex : null; artMat.bumpScale = 2.5; artMat.roughness = key === 'oil' ? .5 : .95; artMat.needsUpdate = true;
+  S.knife = false;
+  buildAnnotations(key); buildLabels(key);
+  document.querySelectorAll('#pieceSeg [data-piece]').forEach(b => b.setAttribute('aria-pressed', b.dataset.piece === key));
+  $('pieceTitle').textContent = rt.def.name; $('pieceSub').textContent = rt.def.sub;
+  $('stK2').textContent = rt.def.counter.label; $('st2N').textContent = rt.def.counter.items.length;
+  const N = rt.def.steps.length - 1; $('stStepN').textContent = N; $('slider').max = N;
+  $('ticks').innerHTML = rt.def.steps.map((_, i) => `<button type="button" data-k="${i}" aria-label="第 ${i} 步">${i}</button>`).join('');
+  buildPaintTools();
+  if (S.paint) exitPaint(true);
+  lastGain = new Set();
+  idleBake();
+}
+
+function gainsUpTo(k) { const g = new Set(); for (let i = 0; i <= k; i++) for (const x of rt.def.steps[i].gain || []) g.add(x); return g; }
+function updateUI() {
+  const def = rt.def, k = S.step, st = def.steps[k], N = def.steps.length - 1;
+  $('stStep').textContent = k;
+  const g = gainsUpTo(k); $('st2').textContent = g.size;
+  $('stepEyebrow').textContent = k === 0 ? `开画之前 · ${st.title}` : `第 ${k} 步 · ${st.title}`;
+  $('stepText').innerHTML = st.text; $('stepTip').innerHTML = st.tip;
+  $('navTitle').textContent = st.title; $('navSub').textContent = `第 ${k} 步，共 ${N} 步 · ${st.tool}`;
+  $('slider').value = k; $('refTitle').textContent = st.ref;
+  [...$('ticks').children].forEach((b, i) => { b.className = i === k ? 'cur' : i < k ? 'done' : ''; });
+  $('chips').innerHTML = def.counter.items.map(([n, c]) => `<span class="chip${g.has(n) ? ' got' : ''}${g.has(n) && !lastGain.has(n) ? ' new' : ''}"><i style="background:${c}"></i>${n}</span>`).join('');
+  lastGain = g;
+  if (S.piece === 'gouache') blobs.forEach((b, i) => { b.visible = g.has(def.counter.items[i][0]); });
+  else blobs.forEach(b => { b.visible = S.piece === 'oil' && k > 0; });
+  for (const key in annGroup) annGroup[key].visible = false;
+  for (const a of st.ann) if (annGroup[a]) annGroup[a].visible = true;
+  $('refLabels').innerHTML = st.ann.map(a => `<span class="ann${ALT.has(a) ? ' alt' : ''}" data-a="${a}">${ANN_TEXT[a]}</span>`).join('');
+  for (const l of labels) { const on = st.focus.includes(l.id); l.el.classList.toggle('on', on); l.show = on || ['subject', 'lamp', 'easel'].includes(l.id); }
+  updateStrokeCount();
+}
+let strokesBefore = 0, strokesNow = 0;
+function updateStrokeCount() { $('st3').textContent = (strokesBefore + strokesNow).toLocaleString('zh-CN'); }
+
+function goStep(k, animate) {
+  const N = rt.def.steps.length - 1; k = clamp(k, 0, N);
+  if (S.paint) exitPaint(true);
+  S.step = k; clearTimeout(playTimer);
+  strokesBefore = 0; for (let i = 1; i < k; i++) strokesBefore += strokesIn(rt, i);
+  const passes = passesOf(rt, k), total = passes.reduce((s, p) => s + p.strokes.length, 0);
+  if (!animate || !total || REDUCED) {
+    octx.drawImage(ensureSnap(rt, k), 0, 0); anim = null; strokesNow = total; markDirty(); toolTip = null;
+    if (S.playing) schedNext(900);
+  } else {
+    sbctx.drawImage(ensureSnap(rt, k - 1), 0, 0); lctx.clearRect(0, 0, W, H);
+    octx.drawImage(stepBase, 0, 0); markDirty();
+    anim = { passes, total, pi: 0, si: 0, drawn: 0, start: performance.now(), dur: clamp(1500 + total * 2.4, 2000, 5600) };
+    strokesNow = 0;
+  }
+  setCam(rt.def.steps[k].cam);
+  updateUI();
+}
+function tickAnim(now) {
+  if (!anim) return;
+  const p = clamp((now - anim.start) / anim.dur, 0, 1), target = Math.floor((1 - Math.pow(1 - p, 1.4)) * anim.total);
+  let changed = false;
+  while (anim.drawn < target && anim.pi < anim.passes.length) {
+    const pass = anim.passes[anim.pi], s = pass.strokes[anim.si];
+    drawStroke(lctx, s); anim.drawn++; anim.si++; changed = true;
+    if (anim.si >= pass.strokes.length) { compositePass(sbctx, pass, layer, tmp, rt.paper); lctx.clearRect(0, 0, W, H); anim.pi++; anim.si = 0; }
+  }
+  if (anim.pi < anim.passes.length) {
+    const pass = anim.passes[anim.pi], s = pass.strokes[anim.si];
+    if (s) {
+      const frac = clamp((1 - Math.pow(1 - p, 1.4)) * anim.total - anim.drawn, 0, 1), [x, y, dx, dy] = pointOn(s, frac);
+      const rate = anim.total / anim.dur * 1000;
+      toolKind = pass.tool || 'pencil'; toolStyle = toolKind === 'pencil' ? (pass.mask ? 'shade' : 'line') : toolKind;
+      toolTip = [x, y]; toolDir = [dx, dy]; if (s.c && toolKind !== 'pencil') toolColor = s.c;
+      toolLift = (1 - sm(0, .15, frac) * sm(1, .85, frac)) * clamp(9 / rate, .12, 1);
+    }
+  }
+  if (changed) {
+    octx.drawImage(stepBase, 0, 0);
+    if (anim.pi < anim.passes.length && anim.si > 0) compositePass(octx, anim.passes[anim.pi], layer, tmp, rt.paper);
+    strokesNow = anim.drawn; updateStrokeCount(); markDirty();
+  }
+  if (p >= 1) {
+    if (!rt.snaps[S.step]) { const c = mk(); ctx2(c).drawImage(stepBase, 0, 0); rt.snaps[S.step] = c; }
+    octx.drawImage(rt.snaps[S.step], 0, 0); markDirty();
+    anim = null; toolTip = null; strokesNow = strokesIn(rt, S.step); updateStrokeCount();
+    if (S.playing) schedNext(1100);
+  }
+}
+function schedNext(ms) {
+  clearTimeout(playTimer);
+  playTimer = setTimeout(() => { if (!S.playing) return; const N = rt.def.steps.length - 1; if (S.step >= N) { setPlaying(false); return; } goStep(S.step + 1, true); }, ms);
+}
+function setPlaying(on) {
+  S.playing = on;
+  $('playIcon').innerHTML = on ? '<path d="M8 5v14M16 5v14"/>' : '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>';
+  $('play').setAttribute('aria-label', on ? '暂停' : '自动播放');
+  if (on) { const N = rt.def.steps.length - 1; if (S.step >= N) goStep(0, true); else if (!anim) goStep(S.step + 1, true); }
+  else clearTimeout(playTimer);
+}
+let bakeTimer = 0;
+// 空闲时在后台一步一步预先画好：先当前作品，再其他作品；正在播放或正在画时先让路
+function idleBake() {
+  clearTimeout(bakeTimer);
+  const tick = () => {
+    if (anim || pstroke || S.playing) { bakeTimer = setTimeout(tick, 500); return; }
+    for (const key of [S.piece, ...Object.keys(DEFS).filter(k => k !== S.piece)]) {
+      if (!RT[key]) { runtime(key); bakeTimer = setTimeout(tick, 120); return; }
+      const r = RT[key];
+      if (r.snaps.length < r.def.steps.length) { ensureSnap(r, r.snaps.length); bakeTimer = setTimeout(tick, 120); return; }
+    }
+  };
+  bakeTimer = setTimeout(tick, 700);
+}
+
+function setView(v) {
+  S.view = v; $('vRoom').setAttribute('aria-pressed', v === 'room'); $('vSheet').setAttribute('aria-pressed', v === 'sheet');
+  $('sheet').hidden = v !== 'sheet'; $('labels').hidden = v !== 'room'; dirty = true;
+}
+
+/* ================= 自己动手画 ================= */
+const PAINT_TOOLS = {
+  sketch: [{ id: '2H', c: '#8a8580', a: .22, w: 1.2 }, { id: 'HB', c: '#55514c', a: .32, w: 1.6 }, { id: '4B', c: '#302d2a', a: .42, w: 2.4 }, { id: '8B', c: '#1a1817', a: .58, w: 3.6 }, { id: '橡皮', erase: true, w: 10 }],
+  gouache: [...DEFS.gouache.counter.items.map(([n, c]) => ({ id: n, sw: c })), { id: '画布色', sw: '#efe8da', erase: true }],
+  oil: [['钛白', '#f4ede0'], ['柠檬黄', '#f0d030'], ['土黄', '#c8902e'], ['熟赭', '#a8683a'], ['朱红', '#d8452a'], ['群青', '#2b3f8a'], ['熟褐', '#4a2e1c'], ['象牙黑', '#1f1c1a']].map(([n, c]) => ({ id: n, sw: c })).concat([{ id: '刮刀', knife: true }])
+};
+let ptool = null;
+function buildPaintTools() {
+  const list = PAINT_TOOLS[S.piece]; ptool = list[{ sketch: 1, gouache: 6, oil: 4 }[S.piece]];
+  $('tools').innerHTML = list.map((t, i) => t.sw ? `<button type="button" class="tool sw" data-i="${i}" title="${t.id}" aria-label="${t.id}" style="background:${t.sw}"></button>` : `<button type="button" class="tool" data-i="${i}">${t.id}</button>`).join('');
+  syncToolBtns();
+  $('bsize').value = S.piece === 'sketch' ? 3 : 5; S.knife = false;
+}
+function syncToolBtns() { const list = PAINT_TOOLS[S.piece]; [...$('tools').children].forEach((b, i) => b.setAttribute('aria-pressed', list[i] === ptool || !!(list[i].knife && S.knife))); }
+$('tools').addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; const t = PAINT_TOOLS[S.piece][+b.dataset.i]; if (t.knife) S.knife = !S.knife; else ptool = t; syncToolBtns(); });
+
+const undo = [];
+function enterPaint() {
+  if (anim) { anim.start = -1e9; tickAnim(performance.now()); }
+  setPlaying(false);
+  S.paint = true; document.body.classList.add('painting'); $('paintbar').hidden = false; $('paintBtnText').textContent = '正在画 · 点“完成”回到步骤';
+  if (rt.user) octx.drawImage(rt.user, 0, 0);
+  markDirty(); undo.length = 0;
+  const g = ctx2($('guide')); g.clearRect(0, 0, W, H); g.drawImage(ensureSnap(rt, rt.def.steps.length - 1), 0, 0);
+  $('guide').hidden = !S.guide;
+  if (innerWidth > 760 || S.view === 'room') setView('sheet');
+  $('view2d').classList.add('painting'); toolKind = S.piece === 'sketch' ? 'pencil' : 'brush';
+  toast(S.piece === 'sketch' ? '选一支铅笔，在画纸上画吧' : '选一个颜色，在画纸上画吧');
+}
+function exitPaint(silent) {
+  S.paint = false; document.body.classList.remove('painting'); $('paintbar').hidden = true; $('paintBtnText').textContent = '自己动手画一张';
+  $('guide').hidden = true; $('view2d').classList.remove('painting');
+  const c = mk(); ctx2(c).drawImage(out, 0, 0); rt.user = c;
+  if (!silent) { octx.drawImage(ensureSnap(rt, S.step), 0, 0); markDirty(); toast('你的画已经收好，下次点“自己动手画”还能接着画'); }
+}
+function pushUndo() { undo.push(octx.getImageData(0, 0, W, H)); if (undo.length > 20) undo.shift(); }
+let paperPat = null;
+function paintSeg(x0, y0, x1, y1, pr, st) {
+  const t = ptool, size = +$('bsize').value, d = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(d / 1.2));
+  if (t.erase) {
+    octx.save(); octx.fillStyle = S.piece === 'sketch' ? (paperPat || (paperPat = octx.createPattern(rt.paper, 'no-repeat'))) : t.sw;
+    if (S.piece === 'sketch') paperPat = octx.createPattern(rt.paper, 'no-repeat'), octx.fillStyle = paperPat;
+    const rad = S.piece === 'sketch' ? 3 + size * 2.2 : 3 + size * 3;
+    octx.globalAlpha = S.piece === 'sketch' ? .18 : .9;
+    for (let i = 0; i <= n; i += 2) { const u = i / n; octx.beginPath(); octx.arc(lerp(x0, x1, u), lerp(y0, y1, u), rad, 0, 7); octx.fill(); }
+    octx.restore(); return;
+  }
+  if (S.piece === 'sketch') {
+    const w = t.w * (.6 + size * .25) * (.6 + pr * .8);
+    octx.fillStyle = t.c;
+    for (let i = 0; i <= n; i++) { const u = i / n, x = lerp(x0, x1, u), y = lerp(y0, y1, u), k = Math.ceil(w * 1.6);
+      for (let j = 0; j < k; j++) { octx.globalAlpha = t.a * (.4 + Math.random() * .8); octx.fillRect(x + (Math.random() - .5) * w, y + (Math.random() - .5) * w, 1.3, 1.3); } }
+    octx.globalAlpha = 1;
+  } else if (S.piece === 'oil') {
+    // 油画：先落暗边，再铺颜料，压出猪鬃沟，最后在迎光的一侧勾一道亮边；刮刀更宽更平、更厚
+    const kn = !!S.knife, w = (5 + size * 4) * (.7 + pr * .5) * (kn ? 1.7 : 1), base = hex(t.sw), dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1;
+    let nx = -dy / L, ny = dx / L; if (nx * -.7 + ny * -.7 < 0) { nx = -nx; ny = -ny; }
+    const h = kn ? 1 : .6, seg = (ox, oy, lw, col, a) => { octx.globalAlpha = a; octx.strokeStyle = col; octx.lineWidth = lw; octx.beginPath(); octx.moveTo(x0 + ox, y0 + oy); octx.lineTo(x1 + ox, y1 + oy); octx.stroke(); };
+    octx.lineCap = kn ? 'butt' : 'round';
+    seg(1.4 * h - nx * w * .12, 1.4 * h - ny * w * .12, w, rgb(base, .6), .4 * h);
+    seg(0, 0, w, t.sw, .95);
+    if (!kn) st.bristles.forEach(([o, k, lw]) => seg(nx * o * w, ny * o * w, w * lw, rgb(base, k < 1 ? .7 : 1.18), .4));
+    seg(nx * w * .38, ny * w * .38, Math.max(1, w * .12), rgb(mixc(base, [255, 250, 235], .55)), .7 * h);
+    octx.lineCap = 'round'; octx.globalAlpha = 1;
+  } else {
+    const w = (4 + size * 4) * (.7 + pr * .5), base = hex(t.sw), dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+    octx.lineCap = 'round'; octx.globalAlpha = .92; octx.strokeStyle = t.sw; octx.lineWidth = w;
+    octx.beginPath(); octx.moveTo(x0, y0); octx.lineTo(x1, y1); octx.stroke();
+    st.bristles.forEach(([o, k, lw]) => { octx.globalAlpha = .35; octx.strokeStyle = rgb(base, k); octx.lineWidth = w * lw; octx.beginPath(); octx.moveTo(x0 + nx * o * w, y0 + ny * o * w); octx.lineTo(x1 + nx * o * w, y1 + ny * o * w); octx.stroke(); });
+    octx.globalAlpha = 1;
+  }
+}
+let pstroke = null;
+function startStroke(x, y, pr) { pushUndo(); pstroke = { x, y, bristles: Array.from({ length: 5 }, () => [(Math.random() - .5) * .8, Math.random() < .5 ? 1.15 : .82, .06 + Math.random() * .1]) }; paintSeg(x, y, x + .1, y + .1, pr, pstroke); markDirty(); toolTip = [x, y]; toolLift = 0; }
+function moveStroke(x, y, pr) { if (!pstroke) return; const l = Math.hypot(x - pstroke.x, y - pstroke.y); if (l > .5) toolDir = [(x - pstroke.x) / l, (y - pstroke.y) / l]; toolLift = 0; paintSeg(pstroke.x, pstroke.y, x, y, pr, pstroke); pstroke.x = x; pstroke.y = y; markDirty(); toolTip = [x, y]; }
+function endStroke() { if (!pstroke) return; pstroke = null; toolLift = .8; const c = rt.user || mk(); ctx2(c).drawImage(out, 0, 0); rt.user = c; }
+const pr = e => (e.pointerType === 'pen' && e.pressure) ? e.pressure : .6;
+const v2pos = e => { const r = view2d.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H]; };
+view2d.addEventListener('pointerdown', e => { if (!S.paint) return; view2d.setPointerCapture(e.pointerId); const [x, y] = v2pos(e); startStroke(x, y, pr(e)); });
+view2d.addEventListener('pointermove', e => { if (!S.paint) return; const [x, y] = v2pos(e); if (pstroke) moveStroke(x, y, pr(e)); else { toolTip = [x, y]; toolLift = .8; } });
+view2d.addEventListener('pointerup', endStroke); view2d.addEventListener('pointercancel', endStroke);
+view2d.addEventListener('pointerleave', () => { if (!pstroke) toolTip = null; });
+// 在 3D 画架上直接画
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function hitBoard(e) {
+  const r = gl.getBoundingClientRect(); ndc.set((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  ray.setFromCamera(ndc, camera); const h = ray.intersectObject(board)[0];
+  return h && h.face.materialIndex === 4 ? [h.uv.x * W, (1 - h.uv.y) * H] : null;
+}
+gl.addEventListener('pointerdown', e => { if (!S.paint || S.view !== 'room') return; const p = hitBoard(e); if (!p) return; controls.enabled = false; gl.setPointerCapture(e.pointerId); startStroke(p[0], p[1], pr(e)); }, true);
+gl.addEventListener('pointermove', e => { if (!S.paint || S.view !== 'room') return; const p = hitBoard(e); if (pstroke && p) moveStroke(p[0], p[1], pr(e)); else if (!pstroke) { toolTip = p; toolLift = .8; } });
+const endGl = () => { if (pstroke) endStroke(); controls.enabled = true; };
+gl.addEventListener('pointerup', endGl); gl.addEventListener('pointercancel', endGl);
+
+/* ================= 事件 ================= */
+$('pieceSeg').addEventListener('click', e => { const b = e.target.closest('[data-piece]'); if (!b || b.dataset.piece === S.piece) return; setPlaying(false); swapPiece(b.dataset.piece); goStep(1, true); });
+$('viewSeg').addEventListener('click', e => { const b = e.target.closest('[data-view]'); if (b) setView(b.dataset.view); });
+$('prev').onclick = () => { setPlaying(false); goStep(S.step - 1, true); };
+$('next').onclick = () => { setPlaying(false); goStep(S.step + 1, true); };
+$('play').onclick = () => setPlaying(!S.playing);
+$('slider').addEventListener('input', e => { setPlaying(false); goStep(+e.target.value, false); });
+$('ticks').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) { setPlaying(false); goStep(+b.dataset.k, true); } });
+$('orbit').onclick = () => { controls.autoRotate = !controls.autoRotate; $('orbit').setAttribute('aria-pressed', controls.autoRotate); };
+$('resetCam').onclick = () => setCam(rt.def.steps[S.step].cam);
+$('helpBtn').onclick = () => { $('help').hidden = false; $('helpClose').focus(); };
+$('helpClose').onclick = () => { $('help').hidden = true; };
+$('help').addEventListener('click', e => { if (e.target.id === 'help') $('help').hidden = true; });
+$('paintBtn').onclick = () => S.paint ? exitPaint() : enterPaint();
+$('exitPaint').onclick = () => exitPaint();
+$('undoBtn').onclick = () => { const d = undo.pop(); if (d) { octx.putImageData(d, 0, 0); markDirty(); const c = rt.user || mk(); ctx2(c).drawImage(out, 0, 0); rt.user = c; } else toast('没有可以撤销的笔画了'); };
+$('newBtn').onclick = () => { pushUndo(); octx.drawImage(rt.paper, 0, 0); markDirty(); toast('换好新纸了'); };
+$('guideBtn').onclick = () => { S.guide = !S.guide; $('guideBtn').setAttribute('aria-pressed', S.guide); $('guide').hidden = !S.guide; $('guideBtn').style.borderColor = S.guide ? 'var(--accent)' : ''; };
+addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || !$('help').hidden) { if (e.key === 'Escape') $('help').hidden = true; return; }
+  if (e.key === 'ArrowRight') { setPlaying(false); goStep(S.step + 1, true); }
+  else if (e.key === 'ArrowLeft') { setPlaying(false); goStep(S.step - 1, true); }
+  else if (e.key === ' ' && e.target.tagName !== 'BUTTON') { e.preventDefault(); setPlaying(!S.playing); }
+});
+let toastT = 0;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
+
+/* ================= 渲染循环 ================= */
+function resize() {
+  const r = $('stage').getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix();
+  const rr = refCanvas.parentElement.getBoundingClientRect(); refR.setSize(rr.width, rr.height, false); refCam.aspect = rr.width / Math.max(1, rr.height); refCam.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe($('stage')); new ResizeObserver(resize).observe(refCanvas.parentElement);
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const tmpV = new THREE.Vector3(), Yup = V(0, 1, 0);
+const TOOL_SVG = {
+  pencil: () => `<svg viewBox="0 0 24 200" preserveAspectRatio="none"><path d="M4 12h16v8H4z" fill="#1e3a28"/><path d="M4 20h16v146H4z" fill="#2f5a3c"/><path d="M4 20h5v146H4z" fill="#447a55"/><path d="M15 20h5v146h-5z" fill="#234530"/><path d="M4 44h16v3H4z" fill="#d8b04a"/><path d="M4 166h16l-5 25h-6z" fill="#e6c79c"/><path d="M4 166h5l1 25h-1z" fill="#f2dcb8"/><path d="M9 191h6l-3 9z" fill="#2b2b2b"/></svg>`,
+  brush: c => `<svg viewBox="0 0 24 260" preserveAspectRatio="none"><path d="M7 0h10l2 170H5z" fill="#a0522d"/><path d="M7 0h3l-1 170H5z" fill="#c27248"/><path d="M5 170h14v36H5z" fill="#c9c9c9"/><path d="M5 170h4v36H5z" fill="#ececec"/><path d="M5 206h14c1 20-3 36-7 54-4-18-8-34-7-54z" fill="#3a2a1e"/><path d="M6.5 236h11c-1 8-3 16-5.5 24-2.5-8-4.5-16-5.5-24z" fill="${c}"/></svg>`,
+  knife: c => `<svg viewBox="0 0 30 200" preserveAspectRatio="none"><path d="M11 0h8l1 108H10z" fill="#7a4a2a"/><path d="M11 0h3l-1 108h-3z" fill="#9a6440"/><path d="M9 108h12v12H9z" fill="#b9bcc0"/><path d="M14 120h2l1 32h-2z" fill="#9aa0a6"/><path d="M15 150l11 22-11 28-11-28z" fill="#d6d9dd"/><path d="M15 150l-11 22 11 28z" fill="#eef0f2"/><path d="M11 186l4 14 4-14z" fill="${c}"/></svg>`,
+  eraser: () => `<svg viewBox="0 0 40 30" preserveAspectRatio="none"><rect x="1" y="1" width="38" height="28" rx="7" fill="#9aa0a6"/><rect x="1" y="1" width="38" height="11" rx="6" fill="#b7bcc1"/></svg>`
+};
+const t2 = { x: 0, y: 0, lift: 1, a: 26, key: '' };
+const BASE_ANGLE = { line: 24, shade: 52, brush: 30, eraser: 8, knife: 40 };
+function updateTool2d() {
+  const el = $('tool2d');
+  if (S.view !== 'sheet' || !toolTip) { el.hidden = true; t2.key = ''; return; }
+  const box = el.parentElement, bw = box.clientWidth, bh = box.clientHeight, kind = toolKind;
+  const key = kind + (kind === 'brush' || kind === 'knife' ? toolColor : '');
+  const len = kind === 'pencil' ? bh * .34 : kind === 'brush' ? bh * .42 : kind === 'knife' ? bh * .3 : bh * .06, wid = kind === 'eraser' ? len * 1.35 : len * (kind === 'brush' ? .1 : kind === 'knife' ? .16 : .12);
+  const bd = el.querySelector('.bd'), sh = el.querySelector('.sh');
+  if (t2.key !== key) {
+    bd.innerHTML = TOOL_SVG[kind](toolColor); bd.style.width = wid + 'px'; bd.style.height = len + 'px';
+    sh.style.width = wid * .8 + 'px'; sh.style.height = len * .9 + 'px';
+    if (el.hidden) { t2.x = toolTip[0]; t2.y = toolTip[1]; }
+    t2.key = key;
+  }
+  el.hidden = false;
+  const px = t2.x, nx = lerp(t2.x, toolTip[0], .4), ny = lerp(t2.y, toolTip[1], .4);
+  t2.x = nx; t2.y = ny; t2.lift = lerp(t2.lift, toolLift, .3);
+  const target = (BASE_ANGLE[toolStyle] ?? 26) - clamp((nx - px) * .5, -16, 16) + toolDir[1] * 4;
+  t2.a = lerp(t2.a, target, .2);
+  const L = t2.lift, X = nx / W * bw, Y = ny / H * bh - L * bh * .018;
+  el.style.transform = `translate(${X}px,${Y}px)`;
+  bd.style.transform = `translateX(-50%) rotate(${t2.a}deg) scale(${1 + L * .06})`;
+  sh.style.transform = `translate(calc(-50% + ${5 + L * 16}px),${4 + L * 12 + bh * .018 * L}px) rotate(${t2.a + 24}deg)`;
+  sh.style.opacity = (.42 - L * .22).toFixed(2);
+}
+let frame = 0;
+function loop(now) {
+  requestAnimationFrame(loop); frame++;
+  tickAnim(now);
+  if (camTween) { const t = ease(clamp((now - camTween.s) / camTween.d, 0, 1)); camera.position.lerpVectors(camTween.p0, camTween.p1, t); controls.target.lerpVectors(camTween.t0, camTween.t1, t); if (t >= 1) camTween = null; }
+  controls.update();
+  // 工具跟随笔尖
+  if (S.paint) { toolKind = ptool && ptool.erase && S.piece === 'sketch' ? 'eraser' : S.piece === 'sketch' ? 'pencil' : S.piece === 'oil' && S.knife ? 'knife' : 'brush';
+    toolStyle = toolKind === 'pencil' ? (/[48]B/.test(ptool.id) ? 'shade' : 'line') : toolKind; if (ptool.sw) toolColor = ptool.sw; }
+  const tk = toolTip ? toolKind : rt.def.idleTool, tool = TOOLS[tk];
+  for (const k in TOOLS) if (k !== tk) { TOOLS[k].visible = false; TOOLS[k].userData.active = false; }
+  const bq = board.getWorldQuaternion(new THREE.Quaternion()), bx = V(1, 0, 0).applyQuaternion(bq), by = V(0, 1, 0).applyQuaternion(bq), bn = V(0, 0, 1).applyQuaternion(bq);
+  let back;
+  if (toolTip) {
+    // 立在纸上：笔尖贴纸，笔杆向外、向上、向右手方向倾斜，并略微拖在运笔方向后面
+    toolTarget.pos.copy(boardPoint(toolTip[0] / W, toolTip[1] / H, .002 + toolLift * .035));
+    const sd = bx.clone().multiplyScalar(toolDir[0]).addScaledVector(by, -toolDir[1]);
+    back = bn.clone().multiplyScalar(LEAN[toolStyle] || .7).addScaledVector(Yup, .45).addScaledVector(bx, .35).addScaledVector(sd, -.25).normalize();
+  } else {
+    // 不画的时候搁在画架横档上
+    toolTarget.pos.copy(easel.localToWorld(V(.1, .879, .085)));
+    back = bx.clone();
+  }
+  toolTarget.q.setFromUnitVectors(Yup, back);
+  if (!tool.userData.active) { tool.position.copy(toolTarget.pos); tool.quaternion.copy(toolTarget.q); }
+  tool.userData.active = true; tool.visible = true;
+  tool.position.lerp(toolTarget.pos, toolTip ? .32 : .12); tool.quaternion.slerp(toolTarget.q, toolTip ? .25 : .12);
+  updateTool2d();
+  // 作品画面同步
+  if (dirty) { if (S.view === 'sheet') { v2.drawImage(out, 0, 0); dirty = false; } }
+  renderer.render(scene, camera);
+  if (frame % 2 === 0 || !REDUCED) refR.render(scene, refCam);
+  // 标签
+  if (S.view === 'room') {
+    const w = gl.clientWidth, h = gl.clientHeight;
+    for (const l of labels) {
+      tmpV.copy(l.pos).project(camera);
+      const vis = l.show && tmpV.z < 1 && Math.abs(tmpV.x) < 1.05 && Math.abs(tmpV.y) < 1.05;
+      l.el.style.opacity = vis ? 1 : 0;
+      if (vis) l.el.style.transform = `translate(${(tmpV.x * .5 + .5) * w}px,${(-tmpV.y * .5 + .5) * h}px) translate(-50%,-50%)`;
+    }
+  }
+  const rw = refCanvas.clientWidth, rh = refCanvas.clientHeight;
+  for (const el of $('refLabels').children) { const p = ANN_POS[el.dataset.a]; if (!p) continue; tmpV.copy(p).project(refCam); el.style.left = (tmpV.x * .5 + .5) * rw + 'px'; el.style.top = (-tmpV.y * .5 + .5) * rh + 'px'; }
+}
+
+swapPiece('sketch');
+setCam('overview', true);
+resize();
+goStep(1, true);
+requestAnimationFrame(loop);
+</script>
