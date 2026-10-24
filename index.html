@@ -353,6 +353,8 @@ function drawStroke(c, s) {
   if (s.k === 'dot') { c.globalAlpha = s.a; c.fillStyle = s.c; c.beginPath(); c.arc(s.x, s.y, s.r, 0, 7); c.fill(); c.globalAlpha = 1; return; }
   const p = s.p;
   if (s.k === 'oil') { drawOil(c, s); return; }
+  // 水粉的大笔触用平头笔：方头，不留一排圆点
+  if (s.k === 'brush' && s.w > 9) c.lineCap = 'butt';
   c.globalAlpha = s.a; c.strokeStyle = s.c; c.lineWidth = s.w; tracePath(c, p); c.stroke();
   if (s.k === 'brush') {
     const dx = p[p.length - 2] - p[0], dy = p[p.length - 1] - p[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, r = rngOf(s.seed);
@@ -868,6 +870,8 @@ const PR = {
   },
   cap: (a, b, r) => ({ sdf: p => sdCap(p, a, b, r), b: [vm(va(a, b), .5), vl(vs(b, a)) / 2 + r],
     geo: () => { const d = vs(b, a), g = new THREE.CapsuleGeometry(r, vl(d), 8, 16), m = vm(va(a, b), .5); g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(d[0], d[1], d[2]).normalize())); return g.translate(m[0], m[1], m[2]); } }),
+  handle: (c, R, r, rot = 0) => ({ sdf: p => { const q = rotY(vs(p, c), -rot); return Math.max(Math.hypot(Math.hypot(q[0], q[1]) - R, q[2]) - r, -q[0]); }, b: [c, R + r], geo: () => new THREE.TorusGeometry(R, r, 10, 40, Math.PI).rotateZ(-Math.PI / 2).rotateY(rot).translate(c[0], c[1], c[2]) }),
+  custom: (sdf, c, rmax) => ({ sdf, b: [c, rmax], geo: () => radialMesh(sdf, c, null, rmax + .02) }),
   arc: (c, R, r, rot = 0) => ({ sdf: p => { const q = rotY(vs(p, c), -rot); return Math.max(Math.hypot(Math.hypot(q[0], q[1]) - R, q[2]) - r, -q[1]); }, b: [c, R + r], geo: () => new THREE.TorusGeometry(R, r, 10, 40, Math.PI).rotateY(rot).translate(c[0], c[1], c[2]) })
 };
 function OBJ(name, parts, mat, k = 0) {
@@ -937,10 +941,97 @@ function HAIR(name, base, rot, color) {
     mesh: () => radialMesh(sdf, va(base, rotY([0, .27, -.01], rot)), null, .2, p => headSDF(toL(p))) };
 }
 
+/* 衬布：挂在背景上的布（hang），铺在台面上又垂过桌沿的布（table）。褶皱用起伏的高度场表示，光线照上去自然有明暗 */
+const wrinkle = (a, b) => vnoise(a * 22, b * 22) * .65 + vnoise(a * 57 + 3, b * 57) * .35 - .5;
+const BURLAP = base => { const c0 = h01(base); return (u, v) => { const w = ((Math.sin(u * 820) > 0) !== (Math.sin(v * 820) > 0) ? 1 : .8) * (.9 + vnoise(u * 300, v * 300) * .2); return c0.map(x => x * w); }; };
+const bisect = (E, d, F, a, b) => { for (let k = 0; k < 7; k++) { const m = (a + b) / 2; if (F(va(E, vm(d, m))) > 0) a = m; else b = m; } return (a + b) / 2; };
+function scanSurf(E, d, t0, t1, F, ok, mkHit) {
+  const N = 12; let pt = t0, pf = F(va(E, vm(d, t0)));
+  for (let s = 1; s <= N; s++) {
+    const t = t0 + (t1 - t0) * s / N, f = F(va(E, vm(d, t)));
+    if (pf > 0 && f <= 0) { const tt = bisect(E, d, F, pt, t), p = va(E, vm(d, tt)); if (ok(p)) return mkHit(tt, p); }
+    pt = t; pf = f;
+  }
+  return null;
+}
+function gridMesh(fn, nu, nv, colAt, tex) {
+  const g = new THREE.PlaneGeometry(1, 1, nu, nv), pos = g.attributes.position, cols = tex ? new Float32Array(pos.count * 3) : null;
+  for (let i = 0; i < pos.count; i++) {
+    const [x, y, z, u, v] = fn(pos.getX(i) + .5, pos.getY(i) + .5); pos.setXYZ(i, x, y, z);
+    if (cols) { const c = colAt(u, v); cols[i * 3] = c[0] ** 2.2; cols[i * 3 + 1] = c[1] ** 2.2; cols[i * 3 + 2] = c[2] ** 2.2; }
+  }
+  g.computeVertexNormals(); if (cols) g.setAttribute('color', new THREE.BufferAttribute(cols, 3)); return g;
+}
+function makeDrape(o) {
+  const albC = h01(o.color), tex = o.tex, colAt = (u, v) => tex ? tex(u, v) : albC, cr = o.crumple || 0;
+  if (o.type === 'hang') {
+    const A = o.folds.reduce((s, f) => s + f[1], 0) + .006 * cr + .001;
+    const off = (x, y) => { let s = 0; const k = .55 + .45 * sm(o.y1, o.y0, y); for (const [lam, amp, ph] of o.folds) s += amp * Math.sin(2 * Math.PI * (x + .02 * Math.sin(y * 5 + ph)) / lam + ph) * k * (.35 + .65 * vnoise(x * 3 / lam + ph * 3, y * 1.6 + ph)); return s + (cr ? wrinkle(x, y) * .012 * cr : 0); };
+    const xr = y => { const t = clamp((y - o.y0) / (o.y1 - o.y0), 0, 1); return [lerp(o.x0, o.x0t ?? o.x0, t), lerp(o.x1, o.x1t ?? o.x1, t)]; };
+    const F = p => p[2] - (o.z + off(p[0], p[1]));
+    const hit = (E, d, tMax) => {
+      if (d[2] >= 0) return null;
+      const t0 = Math.max((o.z + A - E[2]) / d[2], 0), t1 = Math.min((o.z - A - E[2]) / d[2], tMax);
+      if (t1 <= t0) return null;
+      return scanSurf(E, d, t0, t1, F, p => { if (p[1] < o.y0 || p[1] > o.y1) return false; const [a, b] = xr(p[1]); return p[0] >= a && p[0] <= b; }, (tt, p) => {
+        const e = .0015, ov = off(p[0], p[1]), gx = (off(p[0] + e, p[1]) - off(p[0] - e, p[1])) / (2 * e), gy = (off(p[0], p[1] + e) - off(p[0], p[1] - e)) / (2 * e);
+        return { t: tt, n: n3([-gx, -gy, 1]), alb: colAt(p[0], p[1]), ao: clamp(.5 + .5 * ov / A, 0, 1), dir: Math.PI / 2 + clamp(gx * .5, -.3, .3) };
+      });
+    };
+    const mesh = () => [gridMesh((u, v) => { const y = lerp(o.y0, o.y1, v), [a, b] = xr(y), x = lerp(a, b, u); return [x, y, o.z + off(x, y), x, y]; }, 150, 110, colAt, tex)];
+    return { id: 0, hit, mesh, color: o.color, tex: !!tex, hang: true };
+  }
+  const lift = o.lift ?? .006, top = o.top || [], front = o.front || [];
+  const Ht = top.reduce((s, f) => s + f[1], 0) + .006 * cr + .001, Af = front.reduce((s, f) => s + f[1], 0) + .01 * cr + .001;
+  const zb = o.zb ?? -1.5, ZF = FRONT_Z + .05, yb = o.yb ?? TABLE_Y - .3, ytop = TABLE_Y + lift;
+  const hT = (x, z) => { let s = 0; for (const [lam, amp, ph, al] of top) { const u = x * Math.cos(al) + z * Math.sin(al), w = -x * Math.sin(al) + z * Math.cos(al); s += amp * Math.max(0, Math.sin(2 * Math.PI * (u + .025 * Math.sin(w * 11 + ph)) / lam + ph)) ** 2 * sm(.25, .75, vnoise(w * 7 + ph * 5, u * 2 / lam + ph)); } return s + (cr ? (wrinkle(x, z) + .5) * .006 * cr : 0); };
+  const cF = (x, y) => { let s = 0; const k = sm(ytop, ytop - .06, y); for (const [lam, amp, ph] of front) s += amp * Math.sin(2 * Math.PI * x / lam + ph + (ytop - y) * 5) * k * (.4 + .6 * vnoise(x * 2.5 / lam + ph * 4, y * 3)); return s + (cr ? wrinkle(x, y) * .01 * cr * k : 0); };
+  const xrT = z => { const t = clamp((z - zb) / (ZF - zb), 0, 1); return [lerp(o.x0, o.x0f, t), lerp(o.x1, o.x1f, t)]; };
+  const FT = p => p[1] - (ytop + hT(p[0], p[2])), FF = p => p[2] - (ZF + cF(p[0], p[1]));
+  const hit = (E, d, tMax) => {
+    let best = null;
+    if (d[1] < 0) {
+      const t0 = Math.max((ytop + Ht - E[1]) / d[1], 0), t1 = Math.min((ytop - .001 - E[1]) / d[1], tMax);
+      if (t1 > t0) best = scanSurf(E, d, t0, t1, FT, p => { if (p[2] < zb || p[2] > ZF) return false; const [a, b] = xrT(p[2]); return p[0] >= a && p[0] <= b; }, (tt, p) => {
+        const e = .0015, h = hT(p[0], p[2]), gx = (hT(p[0] + e, p[2]) - hT(p[0] - e, p[2])) / (2 * e), gz = (hT(p[0], p[2] + e) - hT(p[0], p[2] - e)) / (2 * e);
+        return { t: tt, n: n3([-gx, 1, -gz]), alb: colAt(p[0], p[2]), ao: .82 + .18 * clamp(h / Ht * 2, 0, 1), dir: o.tdir ?? .05 };
+      });
+    }
+    if (d[2] < 0) {
+      const t0 = Math.max((ZF + Af - E[2]) / d[2], 0), t1 = Math.min((ZF - Af - E[2]) / d[2], best ? best.t : tMax);
+      if (t1 > t0) { const fh = scanSurf(E, d, t0, t1, FF, p => p[1] >= yb && p[1] <= ytop && p[0] >= o.x0f && p[0] <= o.x1f, (tt, p) => {
+        const e = .0015, c = cF(p[0], p[1]), gx = (cF(p[0] + e, p[1]) - cF(p[0] - e, p[1])) / (2 * e), gy = (cF(p[0], p[1] + e) - cF(p[0], p[1] - e)) / (2 * e);
+        return { t: tt, n: n3([-gx, -gy, 1]), alb: colAt(p[0], p[1]), ao: clamp(.5 + .5 * c / Af, 0, 1), dir: Math.PI / 2 };
+      }); if (fh) best = fh; }
+    }
+    return best;
+  };
+  const mesh = () => [
+    gridMesh((u, v) => { const z = lerp(ZF, zb, v), [a, b] = xrT(z), x = lerp(a, b, u); return [x, ytop + hT(x, z), z, x, z]; }, 140, 80, colAt, tex),
+    gridMesh((u, v) => { const y = lerp(yb, ytop, v), x = lerp(o.x0f, o.x1f, u); return [x, y, ZF + cF(x, y), x, y]; }, 140, 60, colAt, tex)
+  ];
+  return { id: 1, hit, mesh, color: o.color, tex: !!tex };
+}
+const hangBack = (color, extra = {}) => makeDrape({ type: 'hang', x0: -.3, x1: .7, y0: TABLE_Y - .01, y1: 1.97, z: BACK_Z + .022, folds: [[.13, .006, .4], [.29, .009, 1.7], [.07, .003, 2.2]], crumple: .9, color, ...extra });
+function chainEdges(rng, pts, o) {
+  const used = new Uint8Array(pts.length), grid = new Map(), A = [], key = (x, y) => (x >> 3) + ',' + (y >> 3);
+  pts.forEach((p, i) => { const k = key(p[0], p[1]); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(i); });
+  const near = (x, y) => { let best = -1, bd = 11; for (let gx = -1; gx <= 1; gx++) for (let gy = -1; gy <= 1; gy++) { const l = grid.get(((x >> 3) + gx) + ',' + ((y >> 3) + gy)); if (l) for (const i of l) if (!used[i]) { const d = Math.hypot(pts[i][0] - x, pts[i][1] - y); if (d < bd) { bd = d; best = i; } } } return best; };
+  for (let s = 0; s < pts.length; s++) {
+    if (used[s]) continue;
+    const line = []; let cur = s;
+    while (cur >= 0) { used[cur] = 1; line.push(pts[cur]); cur = near(pts[cur][0], pts[cur][1]); }
+    if (line.length < 5) continue;
+    for (let k = 0; k < line.length - 2; k += 10) { const seg = line.slice(k, k + 12).filter((_, j, arr) => j % 2 === 0 || j === arr.length - 1); if (seg.length >= 3) A.push({ k: 'line', p: seg.flatMap(([x, y]) => [x + (rng() - .5) * o.j, y + (rng() - .5) * o.j]), w: o.w * (.85 + rng() * .3), c: o.c, a: o.a * .8 * (.8 + rng() * .3) }); }
+  }
+  return A;
+}
+const clothLines = (rng, g, o) => (g.clothEdges || []).flatMap(e => chainEdges(rng, e, o));
+
 /* 光线步进拍参考图 */
-function newG() { const f = () => new Float32Array(GN); return { R: f(), Gc: f(), B: f(), T: f(), D: f(), SH: f(), SP: f(), RF: f(), DIR: f(), EDGE: f(), id: new Int16Array(GN), objs: [] }; }
+function newG() { const f = () => new Float32Array(GN); return { R: f(), Gc: f(), B: f(), T: f(), D: f(), SH: f(), SP: f(), RF: f(), DIR: f(), EDGE: f(), CL: new Int8Array(GN), id: new Int16Array(GN), objs: [] }; }
 function renderG(spec) {
-  const objs = spec.objects, G = newG(), tg = spec.frame.target;
+  const objs = spec.objects, drapes = spec.drapes || [], G = newG(), tg = spec.frame.target;
   const f = n3(vs(tg, EYE)), rgt = n3(vc(f, [0, 1, 0])), up = vc(rgt, f), th = Math.tan(spec.frame.fov * Math.PI / 360);
   const bd = h01(spec.backdrop), cl = h01(spec.cloth), wall = [.16, .12, .09];
   G.objs = objs.map(o => ({ name: o.name, edge: [], specPts: [], bbox: [1e9, 1e9, -1e9, -1e9], cx: 0, cy: 0, n: 0 }));
@@ -958,7 +1049,7 @@ function renderG(spec) {
     const tl = vs(LAMP, p), dist = vl(tl), l = vm(tl, 1 / dist), v = n3(vs(EYE, p)), d = dot3(n, l);
     const inten = sm(Math.cos(.5), Math.cos(.25), -dot3(l, SPOT_AXIS)) * clamp((LAMP_D0 / dist) ** 2, 0, 1.6);
     const vis = d > -.2 ? softShadow(va(p, vm(n, .003)), l, dist) : 0, sh = 1 - vis, wrap = mat && mat.wrap || 0;
-    const diff = Math.max(0, (d + wrap) / (1 + wrap)) * vis * inten, amb = .16 + .07 * n[1] + .09 * Math.max(0, -n[0]), bnc = Math.max(0, -n[1]) * .25;
+    const diff = Math.max(0, (d + wrap) / (1 + wrap)) * vis * inten, amb = (mat ? .16 : .22) + .07 * n[1] + .09 * Math.max(0, -n[0]), bnc = Math.max(0, -n[1]) * .25;
     const hv = n3(va(l, v)), sp = mat ? (mat.ks || 0) * Math.pow(Math.max(0, dot3(n, hv)), mat.shin || 20) * vis * inten : 0;
     let c;
     if (mat && mat.metal) {
@@ -966,7 +1057,7 @@ function renderG(spec) {
       const env = rr[1] > 0 ? va(vm(bd, .7), [glow, glow * .85, glow * .6]) : vm(cl, .8);
       c = alb.map((a, k) => a * (env[k] * 1.3 + diff * .35 + amb * .25) + sp * [1, .9, .75][k]);
     } else {
-      c = alb.map((a, k) => a * (amb + bnc * cl[k] * 1.2 + diff * [1.02, .97, .88][k]) + sp * [1, .96, .88][k]);
+      c = alb.map((a, k) => a * (amb + bnc * cl[k] * 1.2 + diff * (mat ? [1.02, .97, .88] : [1, .97, .92])[k]) + sp * [1, .96, .88][k]);
       if (wrap) { c[0] += .06 * diff; c[1] += .015 * diff; }
     }
     return { c: c.map(x => 255 * Math.pow(clamp(x * 1.05, 0, 1), 1 / 1.08)), d, sh, sp, rf: bnc };
@@ -978,6 +1069,9 @@ function renderG(spec) {
     if (dir[1] < 0) { const t = (TABLE_Y - EYE[1]) / dir[1], p = va(EYE, vm(dir, t)); if (p[2] <= FRONT_Z) { tH = t; hid = 1; hn = [0, 1, 0]; alb = cl; } }
     if (hid !== 1 && dir[2] < 0) { const t = (FRONT_Z - EYE[2]) / dir[2], p = va(EYE, vm(dir, t)); if (p[1] < TABLE_Y) { tH = t; hid = 1; hn = [0, 0, 1]; alb = vm(cl, .9); } }
     if (dir[2] < 0) { const t = (BACK_Z - EYE[2]) / dir[2]; if (t < tH) { const p = va(EYE, vm(dir, t)); if (p[1] > TABLE_Y) { tH = t; hid = 0; hn = [0, 0, 1]; alb = Math.abs(p[0] - .2) < .475 && p[1] < 1.945 ? bd : wall; } } }
+    // 衬布
+    let clI = 0, ao = 1, cdir = 0;
+    for (let di = 0; di < drapes.length; di++) { const hh = drapes[di].hit(EYE, dir, tH); if (hh) { tH = hh.t; hid = drapes[di].id; hn = hh.n; alb = hh.alb; clI = di + 1; ao = hh.ao; cdir = hh.dir; } }
     // 物体
     let t0 = 1e9, t1 = 0; const cand = [];
     objs.forEach((o, k) => { const oc = vs(o.b[0], EYE), b = dot3(oc, dir), c2 = dot3(oc, oc) - o.b[1] * o.b[1], disc = b * b - c2; if (disc > 0) { const s = Math.sqrt(disc), tn = b - s, tf = b + s; if (tf > 0 && tn < tH) { cand.push(k); t0 = Math.min(t0, Math.max(tn, 0)); t1 = Math.max(t1, tf); } } });
@@ -987,7 +1081,7 @@ function renderG(spec) {
       for (let s = 0; s < 160 && t < tEnd; s++) {
         const p = va(EYE, vm(dir, t)); let dm = 1e9, kk = -1;
         for (const k of cand) { const dd = objs[k].sdf(p); if (dd < dm) { dm = dd; kk = k; } }
-        if (dm < 2e-4) { hp = p; hid = 2 + kk; break; }
+        if (dm < 2e-4) { hp = p; hid = 2 + kk; clI = 0; break; }
         t += dm;
       }
     }
@@ -999,10 +1093,19 @@ function renderG(spec) {
       sh0 = shade(hp, hn, mat, alb);
     } else if (hn) sh0 = shade(va(EYE, vm(dir, tH)), hn, null, alb);
     else sh0 = { c: alb.map(x => x * 255 * .4), d: 0, sh: 1, sp: 0, rf: 0 };
+    if (clI) sh0.c = sh0.c.map(v => v * (.8 + .2 * ao));
+    G.CL[idx] = clI;
     G.R[idx] = sh0.c[0]; G.Gc[idx] = sh0.c[1]; G.B[idx] = sh0.c[2];
     G.T[idx] = (sh0.c[0] * .3 + sh0.c[1] * .59 + sh0.c[2] * .11) / 255;
     G.D[idx] = sh0.d; G.SH[idx] = sh0.sh; G.SP[idx] = sh0.sp; G.RF[idx] = sh0.rf; G.id[idx] = hid;
-    G.DIR[idx] = hid >= 2 ? Math.atan2(-dot3(hn, up), dot3(hn, rgt)) + Math.PI / 2 : hid === 1 ? .03 + Math.sin(i * .7 + j * .3) * .08 : (Math.sin(i * .31 + j * .17) > 0 ? .55 : -.55);
+    G.DIR[idx] = clI ? cdir : hid >= 2 ? Math.atan2(-dot3(hn, up), dot3(hn, rgt)) + Math.PI / 2 : hid === 1 ? .03 + Math.sin(i * .7 + j * .3) * .08 : (Math.sin(i * .31 + j * .17) > 0 ? .55 : -.55);
+  }
+  // 衬布的边
+  G.clothEdges = drapes.map(() => []);
+  for (let j = 0; j < GH; j++) for (let i = 0; i < GW; i++) {
+    const idx = j * GW + i, c = G.CL[idx]; if (!c) continue;
+    const nb = [i > 0 ? idx - 1 : -1, i < GW - 1 ? idx + 1 : -1, j > 0 ? idx - GW : -1, j < GH - 1 ? idx + GW : -1];
+    if (nb.some(n => n >= 0 && G.CL[n] !== c && G.id[n] < 2)) G.clothEdges[c - 1].push([(i + .5) * GQ, (j + .5) * GQ]);
   }
   // 物体轮廓、外框、高光点
   const specC = G.objs.map(() => []);
@@ -1122,7 +1225,7 @@ const PIPE = {
     { title: '起形', tool: 'HB 铅笔', cam: 'easel', focus: ['subject'], ann: ['axis'], ref: '切出外形',
       text: `用长直线切出${names}的外轮廓，先方后圆，再一点点修准。前面的物体会挡住后面的，被挡住的部分不用画。`,
       tip: '<span>多比较：</span>拿铅笔比一比，物体之间的高矮、宽窄、距离对不对。',
-      build: r => [{ ...SKG, grain: .2, strokes: contours(r, getG(), { c: '#3c3935', a: .65, w: 1.6, j: 1.6 }) }] },
+      build: r => [{ ...SKG, grain: .2, strokes: [...contours(r, getG(), { c: '#3c3935', a: .65, w: 1.6, j: 1.6 }), ...clothLines(r, getG(), { c: '#5a5652', a: .5, w: 1.3, j: 1.4 })] }] },
     { title: '明暗交界线', tool: '2B 铅笔', cam: 'still', focus: ['lamp', 'subject'], ann: ['light', 'term'], gain: ['明暗交界线'], ref: '找交界线',
       text: `光从左上方照来，每个物体上都有一条受光和背光的分界线。${spec.termNote || '圆的物体交界线是渐变的弧线，方的物体交界线就是那条转折的棱。'}`,
       tip: '<span>比一比：</span>几条交界线里哪条最深？通常离光最近、对比最强的那条最深。',
@@ -1150,28 +1253,28 @@ const PIPE = {
       build: r => { const mb = mm('bg', (i, g) => (1 - isO(i, g)) * (1 - csf(i, g)) * clamp(dkf(i, g) * 1.1, 0, 1) * .75), md = mm('deep', (i, g) => clamp((dkf(i, g) - .55) * 2, 0, 1) * .7);
         return [{ ...SKG, mask: mb, strokes: hatch(r, { m: mb, cell: 80, gap: 5, angles: [-1.15, -.35], w: 1.8, c: '#3a3633', a: .42 }) }, { ...SKG, mask: md, strokes: hatch(r, { m: md, cell: 50, gap: 3.5, angles: [-.85], w: 1.6, c: '#1f1d1b', a: .6 }) }, { ...SKG, grain: .15, strokes: signature(640, 930, SIGN.sketch) }]; } }
   ],
-  gouache: ({ mm, getG, names, spec, col, dirAt }) => [
+  gouache: ({ mm, getG, names, spec, col, dirAt, big, colS }) => [
     { ...BASE.gouache.steps[0] },
     { title: '起稿', tool: '熟褐 · 小号笔', cam: 'easel', focus: ['subject'], ann: ['axis'], gain: ['熟褐'], ref: '找形',
       text: `用加水稀释的熟褐，淡淡勾出${names}的外形、桌面线和投影的位置。`,
       tip: '<span>颜色要淡：</span>起稿的线最后会被颜色盖住。别用铅笔，铅笔灰会把颜色弄脏。',
-      build: r => [{ ...GBR, strokes: [...guideLines(r, getG(), { c: '#8a5a3a', a: .32, onlyHorizon: true }), ...contours(r, getG(), { c: '#8a5a3a', a: .65, w: 2.4, j: 1.5 })] }] },
+      build: r => [{ ...GBR, strokes: [...guideLines(r, getG(), { c: '#8a5a3a', a: .32, onlyHorizon: true }), ...contours(r, getG(), { c: '#8a5a3a', a: .65, w: 2.4, j: 1.5 }), ...clothLines(r, getG(), { c: '#8a5a3a', a: .5, w: 2, j: 1.4 })] }] },
     { title: '铺背景', tool: '橄榄绿 · 土黄 · 钛白', cam: 'easel', focus: ['backdrop', 'lamp'], ann: ['warm', 'cool'], gain: ['橄榄绿', '土黄', '钛白'], ref: '背景也有冷暖',
-      text: '先画面积最大的背景。靠近灯的一边偏暖偏亮，远离灯的一边偏冷偏暗。',
+      text: `先画面积最大的背景。${spec.bgNote || '靠近灯的一边偏暖偏亮，远离灯的一边偏冷偏暗。'}`,
       tip: '<span>顺序：</span>从大到小、从深到浅，是水粉最基本的作画顺序。',
-      build: r => { const m = mm('wall', (i, g) => g.id[i] === 0 ? 1 : 0); return [{ ...GBR, mask: m, strokes: brushes(r, { m, cell: 26, w: [28, 40], len: [50, 95], dir: dirAt, col }) }]; } },
+      build: r => { const m = mm('wall', (i, g) => g.id[i] === 0 ? 1 : 0); return [{ ...GBR, mask: m, strokes: [...big(r, m), ...brushes(r, { m, cell: 26, w: [24, 36], len: [50, 95], dir: dirAt, col })] }]; } },
     { title: '铺台面', tool: '群青 · 钛白', cam: 'still', focus: ['cloth'], ann: ['fold'], gain: ['群青'], ref: '台面与投影',
       text: `铺台面和衬布。${spec.clothNote || '受光的一侧亮一些，靠后和背光的地方暗一些，横向用笔表现台面是平的。'}`,
       tip: '<span>投影一起铺：</span>台面上的投影这一步先按颜色铺出来，后面再加深。',
-      build: r => { const m = mm('table', (i, g) => g.id[i] === 1 ? 1 : 0); return [{ ...GBR, mask: m, strokes: brushes(r, { m, cell: 24, w: [24, 34], len: [50, 90], dir: dirAt, col }) }]; } },
+      build: r => { const m = mm('table', (i, g) => g.id[i] === 1 ? 1 : 0); return [{ ...GBR, mask: m, strokes: [...big(r, m), ...brushes(r, { m, cell: 24, w: [20, 30], len: [50, 90], dir: dirAt, col })] }]; } },
     { title: '物体暗部', tool: '深红 · 群青', cam: 'easel', focus: ['subject'], ann: ['term', 'dark'], gain: ['深红'], ref: '暗部偏冷',
       text: `先铺${names}的暗部。${spec.darkNote || '暗部颜色要“沉”下去、偏冷，几个物体的暗部之间要有联系。'}`,
       tip: '<span>先暗后亮：</span>暗部先铺，亮部再压上去，边缘自然就接上了。',
-      build: r => { const m = mm('odark', (i, g) => isO(i, g) * sm(.25, .05, g.D[i] * (1 - g.SH[i]))); return [{ ...GBR, mask: m, strokes: brushes(r, { m, cell: 15, w: [14, 22], len: [26, 46], dir: dirAt, col }) }]; } },
+      build: r => { const m = mm('odark', (i, g) => isO(i, g) * sm(.25, .05, g.D[i] * (1 - g.SH[i]))); return [{ ...GBR, mask: m, strokes: [...brushes(r, { m, cell: 22, w: [24, 34], len: [40, 70], dir: dirAt, col: colS }), ...brushes(r, { m, cell: 15, w: [14, 22], len: [26, 46], dir: dirAt, col })] }]; } },
     { title: '物体亮部', tool: '朱红 · 柠檬黄', cam: 'easel', focus: ['subject', 'lamp'], ann: ['light', 'warm2'], gain: ['朱红', '柠檬黄'], ref: '亮部偏暖',
       text: `铺${names}的亮部，越靠近光的地方越暖越亮。${spec.litNote || ''}`,
       tip: '<span>一笔是一笔：</span>水粉别来回涂抹，下笔肯定，笔触本身就是画面的一部分。',
-      build: r => { const m = mm('olit', (i, g) => isO(i, g) * sm(-.02, .12, g.D[i] * (1 - g.SH[i]))); return [{ ...GBR, mask: m, strokes: brushes(r, { m, cell: 13, w: [12, 19], len: [22, 40], dir: dirAt, col }) }]; } },
+      build: r => { const m = mm('olit', (i, g) => isO(i, g) * sm(-.02, .12, g.D[i] * (1 - g.SH[i]))); return [{ ...GBR, mask: m, strokes: [...brushes(r, { m, cell: 20, w: [22, 30], len: [36, 60], dir: dirAt, col: colS }), ...brushes(r, { m, cell: 13, w: [12, 19], len: [22, 40], dir: dirAt, col })] }]; } },
     { title: '投影与交界线', tool: '群青 · 深红 · 熟褐', cam: 'still', focus: ['cloth', 'subject'], ann: ['shadow', 'term'], ref: '投影不是黑的',
       text: `压深投影和每个物体的明暗交界线。${spec.shadowNote || '投影不是黑色，而是台面本身的颜色加深，再偏冷、偏紫一点。'}`,
       tip: '<span>别用黑：</span>用深红加群青调出来的深色，比黑色透气。',
@@ -1190,18 +1293,18 @@ const PIPE = {
       tip: '<span>眯眼看：</span>眯起眼睛看整体，哪里跳出来了，就把哪里收一收。',
       build: r => { const m = mm('edge', (i, g) => g.EDGE[i] * (g.D[i] < .2 ? .8 : 0)); return [{ ...GBR, mask: m, strokes: brushes(r, { m, cell: 10, w: [9, 14], len: [18, 30], dir: dirAt, col }) }, { ...GBR, grain: 0, strokes: signature(640, 930, SIGN.gouache, 2.4) }]; } }
   ],
-  oil: ({ mm, getG, names, spec, col, dirAt }) => [
+  oil: ({ mm, getG, names, spec, col, dirAt, big, colS }) => [
     { ...BASE.oil.steps[0] },
     { ...BASE.oil.steps[1], focus: ['subject'] },
     { title: '单色底稿', tool: '熟褐 · 小号笔', cam: 'easel', focus: ['subject'], ann: ['axis'], gain: ['单色底稿'], ref: '用一个颜色找明暗',
       text: `用熟褐勾出${names}和桌面，再用同一个颜色把暗部铺一遍。先只用一个颜色解决素描关系，之后再想颜色。`, tip: BASE.oil.steps[2].tip,
-      build: r => { const m = mm('under', (i, g) => clamp((dkf(i, g) - .25) * 1.3, 0, 1) * .8); return [{ ...OBR, grain: .15, strokes: [...guideLines(r, getG(), { c: '#4a2e1c', a: .4, onlyHorizon: true }), ...contours(r, getG(), { c: '#4a2e1c', a: .75, w: 2.6, j: 1.5 })] }, { ...OBR, mask: m, strokes: brushes(r, { m, cell: 26, w: [24, 36], len: [40, 80], dir: () => -.7, col: () => hex('#4a2e1c'), a: .55, kind: 'oil', h: 0 }) }]; } },
+      build: r => { const m = mm('under', (i, g) => clamp((dkf(i, g) - .25) * 1.3, 0, 1) * .8); return [{ ...OBR, grain: .15, strokes: [...guideLines(r, getG(), { c: '#4a2e1c', a: .4, onlyHorizon: true }), ...contours(r, getG(), { c: '#4a2e1c', a: .75, w: 2.6, j: 1.5 }), ...clothLines(r, getG(), { c: '#4a2e1c', a: .55, w: 2.2, j: 1.4 })] }, { ...OBR, mask: m, strokes: brushes(r, { m, cell: 26, w: [24, 36], len: [40, 80], dir: () => -.7, col: () => hex('#4a2e1c'), a: .55, kind: 'oil', h: 0 }) }]; } },
     { title: '背景 · 湿接湿', tool: '熟褐 · 土黄 · 象牙黑', cam: 'easel', focus: ['backdrop', 'lamp'], ann: ['warm', 'cool'], gain: ['湿接湿'], ref: '背景里的光',
-      text: '背景趁湿一块接一块地画：靠近灯的一侧偏亮偏暖，越远越暗，让相邻的颜色在画布上直接融在一起，这叫湿接湿。', tip: BASE.oil.steps[3].tip,
-      build: r => { const m = mm('wall', (i, g) => g.id[i] === 0 ? 1 : 0); return [{ ...OBR, mask: m, strokes: brushes(r, { m, cell: 24, w: [30, 46], len: [50, 100], dir: dirAt, col, kind: 'oil', h: .2 }) }]; } },
+      text: `背景趁湿一块接一块地画，让相邻的颜色在画布上直接融在一起，这叫湿接湿。${spec.bgNote || '靠近灯的一侧偏亮偏暖，越远越暗。'}`, tip: BASE.oil.steps[3].tip,
+      build: r => { const m = mm('wall', (i, g) => g.id[i] === 0 ? 1 : 0); return [{ ...OBR, mask: m, strokes: [...big(r, m, 'oil', .2), ...brushes(r, { m, cell: 24, w: [26, 40], len: [50, 100], dir: dirAt, col, kind: 'oil', h: .2 })] }]; } },
     { title: '台面', tool: '熟赭 · 土黄 · 熟褐', cam: 'easel', focus: ['cloth'], ann: [], ref: '平的面横着画',
-      text: `台面受光的左边暖而亮，往右、往前逐渐变暗，投影也先按颜色铺出来。${spec.clothNote || '横向用笔，表现台面是平的。'}`, tip: BASE.oil.steps[4].tip,
-      build: r => { const m = mm('table', (i, g) => g.id[i] === 1 ? 1 : 0); return [{ ...OBR, mask: m, strokes: brushes(r, { m, cell: 22, w: [24, 36], len: [60, 110], dir: dirAt, col, kind: 'oil', h: .25 }) }]; } },
+      text: `铺台面和衬布，投影也先按颜色铺出来。${spec.clothNote || '台面受光的左边暖而亮，往右、往前逐渐变暗，横向用笔表现台面是平的。'}`, tip: BASE.oil.steps[4].tip,
+      build: r => { const m = mm('table', (i, g) => g.id[i] === 1 ? 1 : 0); return [{ ...OBR, mask: m, strokes: [...big(r, m, 'oil', .25), ...brushes(r, { m, cell: 22, w: [22, 34], len: [60, 110], dir: dirAt, col, kind: 'oil', h: .25 })] }]; } },
     { title: '物体暗部', tool: '熟褐 · 群青 · 象牙黑', cam: 'still', focus: ['subject'], ann: ['term', 'dark'], ref: '暗部要薄',
       text: `铺${names}的暗部，颜料要薄。${spec.darkNote || '暗部薄、亮部厚，这是油画的老规矩。'}`,
       tip: '<span>薄而透：</span>暗部的颜料薄，底色才能透上来，暗而不死。',
@@ -1286,9 +1389,11 @@ function genericDef(spec) {
   const gi = (x, y) => clamp(y / GQ | 0, 0, GH - 1) * GW + clamp(x / GQ | 0, 0, GW - 1);
   const col = (x, y) => { const g = getG(), i = gi(x, y); return [g.R[i], g.Gc[i], g.B[i]]; };
   const dirAt = (x, y) => getG().DIR[gi(x, y)];
+  const colS = (x, y) => { const a = [0, 0, 0]; for (const [u, v] of [[0, 0], [-10, -10], [10, -10], [-10, 10], [10, 10]]) { const c = col(x + u, y + v); a[0] += c[0] / 5; a[1] += c[1] / 5; a[2] += c[2] / 5; } return a; };
+  const big = (r, m, kind = 'brush', h = 0) => brushes(r, { m, cell: 38, w: [50, 72], len: [90, 160], dir: (x, y) => dirAt(x, y) + (r() - .5) * .5, col: colS, kind, h: h * .5 });
   const M = {}; const mm = (k, f) => M[k] || (M[k] = makeMask((x, y) => clamp(f(gi(x, y), getG()), 0, 1), GQ));
   const names = spec.objects ? spec.objects.filter(o => !o.quiet).map(o => o.name).join('、') : '';
-  const steps = PIPE[spec.mk + (spec.kind === 'land' ? 'Land' : '')]({ spec, getG, col, dirAt, mm, names });
+  const steps = PIPE[spec.mk + (spec.kind === 'land' ? 'Land' : '')]({ spec, getG, col, dirAt, mm, names, big, colS });
   for (const [k, o] of Object.entries(spec.t || {})) Object.assign(steps[k], o);
   for (const st of steps) st.ref = st.ref || st.title;
   const counter = spec.counter || (spec.kind === 'land' && spec.mk === 'sketch' ? LAND_COUNTER : BASE[spec.mk].counter);
@@ -1377,12 +1482,25 @@ function landWheat(x, y) {
 const WHEAT_DOTS = (() => { const r = rngOf(17), A = []; while (A.length < 34) { const x = 40 + r() * 720, y = 760 + r() * 220; if (Math.abs(x - (470 + (y - 480) * .18 + 40 * Math.sin((y - 480) / 520 * 3))) > 90 && x > 260) A.push([x, y, r() < .8 ? '#c8321e' : '#e05a2a']); } return A; })();
 
 /* ================= 12 节新课 ================= */
-const JAR = t => pchain([[0, .052], [.12, .07], [.4, .088], [.7, .07], [.84, .045], [.92, .046], [1, .053]], t);
-const JAR2 = t => pchain([[0, .05], [.15, .075], [.45, .092], [.75, .068], [.88, .05], [1, .058]], t);
-const BOTTLE = t => pchain([[0, .04], [.52, .042], [.62, .038], [.73, .02], [.8, .015], [.95, .015], [.97, .018], [1, .017]], t);
-const KETTLE = t => pchain([[0, .06], [.08, .075], [.35, .088], [.65, .08], [.85, .05], [1, .032]], t);
-const apple3 = (name, c, R, color) => OBJ(name, [PR.ell(c, R), PR.cap(va(c, [0, R[1] * .8, 0]), va(c, [.006, R[1] + .022, 0]), .004)], { c: color, ks: .3, shin: 30 }, .006);
-const GRAPES = (() => { const r = rngOf(42), P = []; for (let k = 0; k < 18; k++) { const a = r() * Math.PI * 2, rr = Math.sqrt(r()); P.push(PR.sphere(at(.1 + Math.cos(a) * rr * .06, .019 + (1 - rr) * .03 + r() * .012, Math.sin(a) * rr * .045), .019)); } P.push(PR.cap(at(.1, .05, 0), at(.09, .088, -.01), .003)); return P; })();
+const CHAMP = t => pchain([[0, .043], [.45, .045], [.6, .04], [.72, .026], [.82, .017], [.93, .016], [.95, .019], [.98, .019], [1, .017]], t);
+const PITCHER = t => pchain([[0, .04], [.1, .05], [.45, .055], [.8, .05], [1, .056]], t);
+const POT = t => pchain([[0, .045], [.15, .07], [.45, .082], [.75, .07], [.9, .05], [1, .04]], t);
+const JUG = t => pchain([[0, .052], [.1, .06], [.45, .065], [.65, .055], [.8, .03], [.92, .018], [1, .019]], t);
+const JAR3 = t => pchain([[0, .06], [.1, .068], [.5, .072], [.7, .066], [.82, .05], [.9, .04], [1, .042]], t);
+const ROUNDJAR = t => pchain([[0, .045], [.15, .07], [.45, .085], [.75, .07], [.88, .035], [.95, .032], [1, .036]], t);
+const BOWL = t => pchain([[0, .035], [.3, .06], [1, .088]], t);
+const apple3 = (name, c, R, color) => OBJ(name, [PR.ell(c, R), PR.cap(va(c, [0, R[1] * .85, 0]), va(c, [.004, R[1] + .012, 0]), .0028)], { c: color, ks: .3, shin: 30 }, .005);
+const quiet = o => ({ ...o, quiet: true });
+function PUMPKIN(name, c, R) {
+  const sdf = p => { const q = vs(p, c), th = Math.atan2(q[2], q[0]), g = 1 - Math.abs(Math.sin(5 * th)), fall = clamp(1 - (q[1] / (R * .6)) ** 2, 0, 1); return (sdEll(q, [0, 0, 0], [R, R * .6, R]) + R * .07 * g ** 3 * fall) * .85; };
+  const fn = p => p[1] > c[1] + R * .5 ? h01('#5a4a2c') : mixc(h01('#e0641a'), h01('#f2b232'), sm(.38, .66, fbm(p[0] * 70 + 5, p[2] * 70 + p[1] * 50)));
+  return OBJ(name, [PR.custom(sdf, c, R), PR.cap(va(c, [0, R * .5, 0]), va(c, [.006, R * .78, .004]), .006)], { c: '#e8801e', ks: .35, shin: 30, fn }, .004);
+}
+const FLOWERS = (() => {
+  const r = rngOf(9), base = at(.07, .18, -.08), tips = [at(-.04, .37, -.06), at(.01, .41, -.075), at(.1, .4, -.08)], heads = [];
+  for (const t of tips) for (const f of [1, .78]) { const c = va(base, vm(vs(t, base), f)); for (let k = 0; k < (f === 1 ? 7 : 4); k++) heads.push(PR.sphere(va(c, [(r() - .5) * .028, (r() - .3) * .02, (r() - .5) * .02]), .0065 + r() * .002)); }
+  return { stems: tips.map(t => PR.cap(base, t, .0025)), heads };
+})();
 const LAND_REG = {
   tree: [{ name: '天空', layer: 0 }, { name: '云', layer: 0 }, { name: '远山', layer: 1, outline: 'ridge' }, { name: '树林', layer: 2, outline: 'ridge' }, { name: '田野', layer: 3 }, { name: '小路', layer: 3, outline: 'blob' }, { name: '灌木', layer: 3, outline: 'blob' }, { name: '大树', layer: 4, outline: 'blob' }, { name: '树干', layer: 4, outline: 'blob' }],
   lake: [{ name: '天空', layer: 0 }, { name: '晚霞', layer: 0 }, { name: '太阳', layer: 0, outline: 'blob' }, { name: '远山', layer: 1, outline: 'ridge' }, { name: '对岸树林', layer: 2, outline: 'ridge' }, { name: '湖面', layer: 2 }, { name: '近岸', layer: 3, outline: 'ridge' }, { name: '树', layer: 4, outline: 'blob' }, { name: '树干', layer: 4 }, { name: '芦苇', layer: 4 }],
@@ -1393,18 +1511,26 @@ const SKIN = { skin: [.86, .66, .55], cheek: [.84, .52, .46], lip: [.7, .37, .35
 const SKIN_WARM = { ...SKIN, skin: [.84, .6, .44], cheek: [.82, .46, .36], chin: [.66, .5, .42], shirt: [.16, .13, .11], hair: [.14, .1, .08] };
 const LESSON_SPECS = [
   /* ---------- 素描 ---------- */
-  { key: 'sk-geo', mk: 'sketch', kind: 'still', level: '基础', name: '几何体组合', sub: '素描 · 方、尖、圆', backdrop: '#4a4a4c', cloth: '#bdb6aa', frame: { target: at(.01, .1, -.03), fov: 27 },
+  { key: 'sk-geo', mk: 'sketch', kind: 'still', level: '基础', name: '几何体组合', sub: '素描 · 方、尖、圆与衬布', backdrop: '#7a7774', cloth: '#6a5a4a', frame: { target: at(.01, .12, -.02), fov: 30 },
     objects: [OBJ('正方体', [PR.box(at(-.1, .075, -.06), [.075, .075, .075], .6)], PLASTER), OBJ('圆锥', [PR.cone(at(.1, 0, -.13), .07, .24)], PLASTER), OBJ('球体', [PR.sphere(at(.08, .055, .1), .055)], PLASTER)],
+    drapes: [hangBack('#7a7774'), makeDrape({ type: 'table', x0: -.06, x1: .38, x0f: -.3, x1f: .5, top: [[.09, .009, .3, .55], [.14, .012, 1.2, -.35]], front: [[.06, .01, 0], [.11, .013, 1.3]], crumple: .4, color: '#e8e4da', lift: .007 })],
     termNote: '正方体的交界线就是受光面和背光面之间那条棱；圆锥的交界线是一条从锥尖斜着下来的直线；球体的是弧线。', darkNote: '正方体的背光面是一整块平面，排线要平整均匀；圆锥的暗部顺着锥面从尖往底排。',
-    midNote: '正方体朝上的顶面最亮，朝着灯的侧面是灰面。三个面的明暗拉开，方体才立得住。', hlNote: '石膏很粗糙，高光不明显，只在球体和锥面上轻轻提一下。', endNote: '最后检查透视：正方体近大远小，远处的棱要往里收。',
-    t: { 1: TX('正方体、圆锥、球体是所有形体的基础：方、尖、圆。先用轻线定出三者合起来的大三角形——高的圆锥在后，方体在左，小球在前，前后错开才有空间。', ['大三角：', '组合静物最稳的构图是一高一中一低，连起来像个三角形。'], '三角形构图'),
-      2: TX('先画正方体：找出看得见的三个面和九条棱，注意近大远小；圆锥画一个尖顶加椭圆底；球体先切方再修圆。', ['透视：', '正方体底面的两条边会往远处收拢，越远越短。'], '方、尖、圆') } },
-  { key: 'sk-jar', mk: 'sketch', kind: 'still', level: '进阶', name: '陶罐与苹果', sub: '素描 · 组合静物的质感', backdrop: '#4a4a4c', cloth: '#c9c2b4', frame: { target: at(.01, .1, 0), fov: 25 },
-    objects: [OBJ('陶罐', [PR.lathe(at(-.07, 0, -.08), JAR, .2)], { c: '#7a4e32', ks: .45, shin: 40 }), apple3('苹果', at(.1, .046, .08), [.05, .046, .05], '#b8402e')],
-    termNote: '陶罐是圆柱加圆球的组合，交界线是一条竖着的弧线；苹果的交界线是斜着的弧线。', darkNote: '陶罐固有色深，暗部可以一次铺足；苹果在素描里是中灰色，暗部比陶罐浅。',
-    midNote: '陶罐固有色深，整个亮部也要压一层灰，不能和衬布一样白。', hlNote: '陶罐上了釉，高光又小又亮，是全画最亮的点；苹果的高光柔和一些。', endNote: '衬布最浅、苹果中间、陶罐最深，三个物体的深浅一拉开，质感就出来了。',
-    t: { 1: TX('一个陶罐配一个苹果，是最经典的组合：高的在后、矮的在前，一大一小、一深一浅。先定出罐子的高度和苹果的位置，罐口和罐底都画成椭圆。', ['椭圆：', '罐口离眼睛近，椭圆扁一点；罐底离眼睛远，椭圆圆一点。'], '一高一低'),
-      7: TX('用可塑橡皮在陶罐上点出一个小而亮的高光，再在苹果上擦出柔和的亮点，罐子底部提一点反光。', ['质感靠高光：', '高光的大小和硬软，最能说明东西是光滑还是粗糙。'], '两种高光') } },
+    midNote: '正方体朝上的顶面最亮，朝着灯的侧面是灰面。三个面的明暗拉开，方体才立得住。', hlNote: '石膏很粗糙，高光不明显，只在球体和锥面上轻轻提一下。',
+    endNote: '灰色背景布和白衬布的褶皱，只画最大的几条，排线顺着褶皱的走向。最后检查透视：正方体近大远小。',
+    t: { 1: TX('正方体、圆锥、球体是所有形体的基础：方、尖、圆。高的圆锥在后，方体在左，小球在前，三者连起来是一个三角形；一块白衬布从后往前斜铺，垂过桌沿，把视线引到几何体上。', ['大三角：', '组合静物最稳的构图是一高一中一低，连起来像个三角形。'], '三角形构图'),
+      2: TX('先画正方体：找出看得见的三个面和九条棱，注意近大远小；圆锥画一个尖顶加椭圆底；球体先切方再修圆。再画出白衬布的边和垂下来的褶子。', ['透视：', '正方体底面的两条边会往远处收拢，越远越短。'], '方、尖、圆') } },
+  { key: 'sk-bowl', mk: 'sketch', kind: 'still', level: '进阶', name: '罐子、果盘与苹果', sub: '素描 · 多物体组合', backdrop: '#c9c7c1', cloth: '#9a958a', frame: { target: at(.06, .13, -.02), fov: 36 },
+    objects: [OBJ('瓷罐', [PR.lathe(at(-.15, 0, -.1), ROUNDJAR, .17)], { c: '#5f7d78', ks: .7, shin: 50 }),
+      OBJ('白瓷碗', [PR.lathe(at(.09, .012, -.03), BOWL, .055)], { c: '#efede8', ks: .6, shin: 60 }),
+      OBJ('竹编盘', [PR.cyl(at(.09, 0, -.03), .125, .012)], { c: '#c8a060', ks: .1, shin: 10, fn: p => { const dx = p[0] - STAND[0] - .09, dz = p[2] - STAND[2] + .03, k = (Math.sin(Math.hypot(dx, dz) * 600) > 0) !== (Math.sin(Math.atan2(dz, dx) * 40) > 0); return h01('#c8a060').map(v => v * (k ? 1 : .8)); } }),
+      apple3('苹果', at(.055, .101, -.05), [.037, .035, .037], '#d6503a'), quiet(apple3('苹果', at(.125, .101, -.045), [.036, .034, .036], '#e0683e')), quiet(apple3('苹果', at(.09, .148, -.03), [.035, .033, .035], '#d85a3a')), quiet(apple3('苹果', at(.25, .042, .1), [.043, .041, .043], '#d85a3a'))],
+    drapes: [hangBack('#c9c7c1'), makeDrape({ type: 'hang', x0: .42, x1: .64, x0t: .52, x1t: .54, y0: TABLE_Y - .01, y1: 1.55, z: BACK_Z + .07, folds: [[.05, .004, 0], [.09, .005, 1]], crumple: 1, color: '#1f6868' }),
+      makeDrape({ type: 'table', x0: -.32, x1: .72, x0f: -.34, x1f: .74, top: [[.13, .004, .3, .2]], front: [[.08, .008, 0], [.14, .01, 1]], crumple: .5, color: '#e9e6de' })],
+    termNote: '瓷罐和苹果都是球形，交界线是弧线；碗口是一个椭圆，碗壁的交界线顺着碗身斜下来。', darkNote: '瓷罐固有色最深，暗部一次铺足；白碗和白桌布最浅，暗部只是浅灰。',
+    midNote: '深色的毛巾和瓷罐，亮部也比白碗的暗部深。比较物体之间的深浅，是组合静物最重要的事。', hlNote: '瓷罐和白碗上了釉，高光小而亮；苹果的高光柔和；竹编盘和毛巾粗糙，没有高光。',
+    endNote: '白桌布受光的台面亮、垂下去的部分暗；挂着的毛巾很深，褶皱顺着它垂下的方向排线。',
+    t: { 1: TX('这组静物有主有次：左边的瓷罐、中间竹编盘上的白碗里堆着苹果、右边挂着一条深色毛巾、前面还落着一个苹果。先用轻线定出整组的大轮廓：左低右高、前后错落，像一个斜着的三角形。', ['疏密：', '三个苹果挤在碗里是“密”，桌上那一个是“疏”，有疏有密画面才活。'], '疏密与主次'),
+      7: TX('用可塑橡皮在瓷罐和白碗上点出小而亮的高光，在苹果上擦出柔和的亮点，暗部底边提一点反光。', ['质感靠高光：', '高光的大小和软硬，最能说明东西是光滑还是粗糙。'], '不同的高光') } },
   { key: 'sk-land', mk: 'sketch', kind: 'land', level: '进阶', name: '风景速写', sub: '素描 · 大树、小路与远山', land: landTree, regions: LAND_REG.tree, horizon: 572,
     annPts: { sky: [560, 200, '天空'], far: [640, 466, '远景'], midl: [640, 548, '中景'], near: [600, 860, '近景'], main: [205, 300, '主体：大树'], horizon: [700, 572, '地平线'], sun: [110, 140, '光从左上来'] },
     t: { 1: TX('风景先定地平线。把地平线放在画面三分之一附近，不要放正中间。大树放在左边的三分线上做主体，小路从右下角弯进画面，把视线引向远方。', ['三分法：', '把画面横竖各分成三等份，主体放在交叉点附近，画面就有了重心。'], '三分法构图'),
@@ -1415,7 +1541,7 @@ const LESSON_SPECS = [
       6: TX('大树是画面的主角。树冠不是一个圆，而是几团叶簇，每一团都有受光面和背光面，像画一组球体。树干上亮下暗。', ['看成球：', '把一团团叶子当成球来画，明暗就不会乱。'], '树冠是一组球'),
       7: TX('光从左上方来：压深树冠的背光面和树下的影子，再用可塑橡皮把小路和云的亮处擦亮一点，让阳光“亮”起来。', ['最暗在近处：', '全画最深的颜色留给近处大树的暗部。'], '光从左上来'),
       8: TX('退后看整体：远浅近深、远虚近实，层次清楚了，画面就有了纵深。最后签名。', ['四个层次：', '天空、远景、中景、近景，一层比一层深，这是风景画的骨架。'], '风景的层次') } },
-  { key: 'sk-head', mk: 'sketch', kind: 'still', head: true, level: '挑战', name: '石膏头像', sub: '素描 · 四分之三侧面', backdrop: '#4a4a4c', cloth: '#bdb6aa', frame: { target: at(0, .18, -.02), fov: 23 },
+  { key: 'sk-head', mk: 'sketch', kind: 'still', head: true, level: '挑战', name: '石膏头像', sub: '素描 · 四分之三侧面', backdrop: '#6e6c68', cloth: '#bdb6aa', drapes: [hangBack('#6e6c68')], frame: { target: at(0, .18, -.02), fov: 23 },
     objects: [HEAD('石膏头像', at(0, 0, -.02), .45, PLASTER), { ...HAIR('头发', at(0, 0, -.02), .45, '#eeebe4'), quiet: true }],
     t: { 1: TX('头像先找比例：发际线到眉毛、眉毛到鼻底、鼻底到下巴，三段一样长，叫“三庭”；脸宽大约是五只眼睛宽，叫“五眼”。这个石膏像转成了四分之三侧面，中线也跟着偏到一边。', ['先定中线：', '中线决定头往哪边转，五官都对称地挂在中线两侧。'], '三庭五眼'),
       2: TX('先画头部和脖子的大外形，再按三庭的位置放上眉弓、鼻子、嘴和下巴。四分之三侧面里，远处那半边脸会被“压窄”。', ['先大后小：', '先画准头的外形和五官的位置，再画五官的形状。'], '大形与五官位置'),
@@ -1426,19 +1552,27 @@ const LESSON_SPECS = [
       7: TX('用可塑橡皮提出额头、鼻梁、颧骨和下巴的高光，下颌暗部的边缘提一点反光。', ['高光有顺序：', '鼻梁和额头最亮，其次是颧骨和下巴。'], '头部的高光'),
       8: TX('铺背景，压深脖子下面和后脑的暗部，让头部从背景里“转”出来。', ['后脑要虚：', '离我们远的后脑勺边缘画虚一点，前面的五官画实。']) } },
   /* ---------- 水粉 ---------- */
-  { key: 'gc-jar', mk: 'gouache', kind: 'still', level: '基础', name: '苹果与陶罐', sub: '水粉 · 主次与固有色', backdrop: '#7d8470', cloth: '#6f86a3', frame: { target: at(.02, .1, -.01), fov: 26 },
-    objects: [OBJ('陶罐', [PR.lathe(at(-.09, 0, -.1), JAR2, .22)], { c: '#b0603a', ks: .12, shin: 12 }), apple3('红苹果', at(.03, .046, .08), [.05, .046, .05], '#c3301f'), apple3('青苹果', at(.13, .044, -.02), [.047, .044, .047], '#8fb04a')],
-    darkNote: '陶罐暗部用熟褐加群青，红苹果用深红，青苹果用橄榄绿加群青。三个物体颜色不同，但暗部都偏冷。', litNote: '红苹果亮部加朱红和一点黄，青苹果亮部加柠檬黄，陶罐亮部是土红加白。',
-    envNote: '蓝衬布会映到三个物体的底部，红苹果也会把一点红映到旁边的青苹果上。', hlNote: '陶罐没上釉，高光很弱；两个苹果表皮光滑，高光清楚。',
-    t: { 1: TX('陶罐做主体放在后面，红苹果在前、青苹果在右，一红一绿形成补色对比。用熟褐淡淡勾出外形和桌面线。', ['主次：', '主体最大、最完整，配角小一点，并且有遮挡。'], '一主两次') } },
-  { key: 'gc-bottle', mk: 'gouache', kind: 'still', level: '进阶', name: '酒瓶与水果', sub: '水粉 · 多物体静物', backdrop: '#8a7f6a', cloth: '#d8d2c4', frame: { target: at(0, .12, -.02), fov: 29 },
-    objects: [OBJ('酒瓶', [PR.lathe(at(-.12, 0, -.13), BOTTLE, .3)], { c: '#1f4a2e', ks: 1.2, shin: 90 }), OBJ('白瓷盘', [PR.cyl(at(.04, 0, .01), .1, .012)], { c: '#eeeae0', ks: .5, shin: 60 }),
-      OBJ('橙子', [PR.sphere(at(.03, .057, 0), .045)], { c: '#e8862a', ks: .25, shin: 20 }), OBJ('梨', [PR.sphere(at(.12, .04, .07), .04), PR.sphere(at(.123, .083, .07), .026), PR.cap(at(.124, .105, .07), at(.13, .125, .07), .003)], { c: '#c8b84a', ks: .2, shin: 20 }, .02),
-      OBJ('柠檬', [PR.ell(at(-.04, .03, .13), [.045, .03, .03], .3)], { c: '#f0d040', ks: .3, shin: 30 })],
-    darkNote: '深绿的酒瓶暗部几乎是黑绿色，但要用群青加深绿调，不要用黑。白盘子的暗部是带紫的灰，不是灰黑。', litNote: '橙子、梨、柠檬是三种不同的黄：橙子偏红，梨偏绿，柠檬最冷最亮。',
-    envNote: '白盘子最容易“染色”：橙子的颜色会映在盘子上，白桌布也会把冷光映到酒瓶底部。', hlNote: '酒瓶是玻璃，高光是一条又细又亮的竖线，是全画最亮的地方；水果的高光柔和。',
-    clothNote: '白桌布不是白色：受光处偏暖黄，背光处偏冷紫灰。',
-    t: { 1: TX('五个物体：酒瓶最高放在后面，白盘子托着橙子在中间，梨和柠檬散在前面。先定出酒瓶的高度和盘子的椭圆，再放水果。', ['疏密：', '物体之间有挤有松，不要排成一排，也不要距离都一样。'], '高低疏密') } },
+  { key: 'gc-teapot', mk: 'gouache', kind: 'still', level: '基础', name: '茶壶与桃子', sub: '水粉 · 衬布与同类色', backdrop: '#b9b7b0', cloth: '#a8a59e', frame: { target: at(0, .13, 0), fov: 31 },
+    objects: [OBJ('红茶壶', [PR.lathe(at(-.05, 0, -.03), POT, .1), PR.ell(at(-.05, .1, -.03), [.042, .014, .042]), PR.sphere(at(-.05, .118, -.03), .012), PR.handle(at(-.125, .055, -.03), .032, .0075, Math.PI), PR.cap(at(.015, .04, -.03), at(.068, .095, -.03), .0095)], { c: '#8a1c2e', ks: 1, shin: 70 }, .01),
+      OBJ('桃子', [PR.sphere(at(.08, .044, .07), .044), PR.sphere(at(.105, .047, .075), .04)], { c: '#e8907a', ks: .06, shin: 6, fn: p => mixc(h01('#f4c294'), h01('#d6485a'), clamp(.45 + (p[1] - TABLE_Y - .05) * 10 + (STAND[0] + .09 - p[0]) * 7, 0, 1) * .85) }, .025),
+      quiet(OBJ('桃叶', [PR.ell(at(.04, .012, .12), [.034, .004, .013], .7), PR.ell(at(.062, .02, .13), [.028, .004, .011], -.5)], { c: '#4f7a36', ks: .3, shin: 30 }))],
+    drapes: [hangBack('#b9b7b0'), makeDrape({ type: 'hang', x0: .12, x1: .58, x0t: .22, x1t: .46, y0: TABLE_Y - .01, y1: 1.97, z: BACK_Z + .07, folds: [[.09, .008, 0], [.15, .01, 1.3], [.23, .008, 2.5]], crumple: .3, color: '#eaa48e' }),
+      makeDrape({ type: 'table', x0: .02, x1: .62, x0f: -.12, x1f: .66, zb: -1.48, top: [[.1, .008, .3, .4], [.16, .011, 1.7, -.5], [.07, .004, 2.2, .1]], front: [[.07, .009, 0], [.12, .012, 1.4]], crumple: .3, color: '#eaa48e' })],
+    bgNote: '灰色的背景布偏冷，正好衬托暖暖的粉色衬布和红茶壶。', clothNote: '粉衬布的大褶皱：受光的一面亮而暖，背光的褶子里偏紫偏冷，褶皱转折的地方最深。',
+    darkNote: '茶壶是深红釉，暗部用深红加一点群青，几乎接近紫黑；桃子的暗部是带紫的红。', litNote: '桃子亮部是浅黄到粉红的渐变，表面有绒毛，颜色柔和；茶壶亮部是饱和的玫红。',
+    envNote: '粉衬布的颜色会映到茶壶底部和桃子的暗部。', hlNote: '茶壶釉面光滑，高光又亮又硬；桃子有绒毛，几乎没有高光。',
+    t: { 1: TX('红茶壶、粉桃子，再配一大块从背后垂下来、在台面上铺开的粉色衬布，这叫“同类色”搭配：颜色和谐，要靠深浅和冷暖拉开。先勾出茶壶、桃子和衬布大褶皱的走向。', ['衬布要有走向：', '衬布从背后垂下、在台面上铺开，褶皱像一条河，把视线引到主体上。'], '同类色') } },
+  { key: 'gc-bottle', mk: 'gouache', kind: 'still', level: '进阶', name: '酒瓶、奶罐与苹果', sub: '水粉 · 色彩静物写生', backdrop: '#8c8781', cloth: '#5a3e2e', frame: { target: at(.01, .15, 0), fov: 31 },
+    objects: [OBJ('酒瓶', [PR.lathe(at(.03, 0, -.1), CHAMP, .34)], { c: '#3a4a1c', ks: 1.3, shin: 110 }),
+      OBJ('白奶罐', [PR.lathe(at(-.1, 0, .03), PITCHER, .12), PR.handle(at(-.15, .068, .03), .03, .0065, Math.PI), PR.cap(at(-.06, .112, .03), at(-.038, .124, .03), .009)], { c: '#e6e4de', ks: .7, shin: 60 }, .008),
+      apple3('红苹果', at(.12, .05, .09), [.052, .049, .052], '#c8261c')],
+    drapes: [hangBack('#8c8781'), makeDrape({ type: 'hang', x0: .22, x1: .66, y0: 1.04, y1: 1.97, z: BACK_Z + .05, folds: [[.1, .008, .2], [.21, .011, 1.3]], crumple: .25, color: '#eeece6' }),
+      makeDrape({ type: 'table', x0: -.08, x1: .12, x0f: -.13, x1f: .2, top: [[.06, .005, 0, .15], [.11, .007, 1, .1]], front: [[.05, .008, 0], [.09, .011, 1.2]], crumple: .4, color: '#ebe7dc', lift: .008 }),
+      makeDrape({ type: 'table', x0: .1, x1: .5, x0f: .2, x1f: .52, top: [[.09, .004, .5, .25]], front: [[.07, .009, .4], [.12, .01, 2]], crumple: .6, color: '#1e2a48', lift: .005 })],
+    bgNote: '灰背景布偏冷，白挂布受光偏暖，两块布的褶皱都是竖着垂下来的。', clothNote: '白布和深蓝布对比最强：白布受光处偏暖黄、褶子里偏冷灰；深蓝布暗部几乎是黑蓝，受光处带一点紫。',
+    darkNote: '深绿酒瓶的暗部用深绿加群青，白奶罐的暗部是带蓝紫的灰，红苹果的暗部用深红。', litNote: '酒瓶亮部是透着光的橄榄绿，白奶罐的亮部偏暖，苹果亮部是朱红。',
+    envNote: '白奶罐最容易“染色”：旁边的绿酒瓶和红苹果都会映在它身上，底部映出白布的冷光。', hlNote: '酒瓶是玻璃，高光是又细又亮的竖线；奶罐是釉面，高光小而亮；苹果的高光柔和。',
+    t: { 1: TX('经典的写生组合：深绿酒瓶最高，放在后面；白奶罐在左，红苹果在右前方。背景是灰布加一块白布，台面上白布和深蓝布一左一右。先勾出物体和每块衬布的边界。', ['黑白灰：', '酒瓶和深蓝布是“黑”，白奶罐和白布是“白”，灰背景是“灰”，三种明度搭配好，画面就稳。'], '黑白灰搭配') } },
   { key: 'gc-lake', mk: 'gouache', kind: 'land', level: '进阶', name: '湖边夕照', sub: '水粉 · 色彩风景', land: landLake, regions: LAND_REG.lake, horizon: 545,
     counter: { label: '颜色', items: [['熟褐', '#5a3a26'], ['群青', '#2f3f8f'], ['青莲', '#6a4a8e'], ['朱红', '#e0482a'], ['橘黄', '#f0a040'], ['柠檬黄', '#f2d23c'], ['钛白', '#f6f2ea'], ['普蓝', '#1f2a4a']] },
     gains: [[], ['熟褐'], ['群青', '青莲', '朱红', '橘黄', '钛白'], [], ['普蓝'], [], [], [], ['柠檬黄'], []],
@@ -1452,7 +1586,7 @@ const LESSON_SPECS = [
       7: TX('加强明暗对比：剪影再压深一点，天空和水面最亮的地方再提一提。', ['对比集中：', '最亮的太阳旁边放最深的树，画面最抓眼。']),
       8: TX('用钛白调柠檬黄，在太阳下的水面点出一条碎碎的光带，再点亮太阳本身。', ['碎光：', '水面的光是一点一点断开的，不要画成一条直线。'], '水面碎光'),
       9: TX('眯起眼睛检查天空、水面、近岸三大块的明暗关系，最后签名。', ['三大块：', '天空最亮、水面次之、近岸最暗，关系对了画面就对了。']) } },
-  { key: 'gc-head', mk: 'gouache', kind: 'still', head: true, level: '挑战', name: '色彩头像', sub: '水粉 · 肤色的冷暖', backdrop: '#6a7a8a', cloth: '#8a8a88', frame: { target: at(0, .18, -.02), fov: 23 },
+  { key: 'gc-head', mk: 'gouache', kind: 'still', head: true, level: '挑战', name: '色彩头像', sub: '水粉 · 肤色的冷暖', backdrop: '#6a7a8a', cloth: '#8a8a88', drapes: [hangBack('#6a7a8a')], frame: { target: at(0, .18, -.02), fov: 23 },
     objects: [HEAD('头像', at(0, 0, -.02), .45, { c: '#d9a58a', ks: .15, shin: 20, wrap: .3 }, skinAlb(SKIN)), { ...HAIR('头发', at(0, 0, -.02), .45, '#3a2a20'), quiet: true }],
     darkNote: '肤色暗部偏冷偏暗：用土黄、熟褐加一点群青，不要用黑。头发的暗部和脸的暗部连成一片。', litNote: '额头偏黄，脸颊、鼻头、耳朵偏红，下巴偏冷——这叫“三段色”。',
     envNote: '背景的灰蓝映到脸和脖子暗部的边缘，形成冷色的反光。', hlNote: '鼻梁、额头和眼睛里点出高光，眼睛有了高光才有神。', shadowNote: '眼窝、鼻底、下巴下面的投影用暖暗色，交界线带一点红。',
@@ -1461,21 +1595,26 @@ const LESSON_SPECS = [
       5: TX('亮部用朱红、土黄加钛白调出肤色。额头偏黄，脸颊偏红，下巴偏冷，这是画肤色最好记的“三段色”。', ['三段色：', '额头黄、脸颊红、下巴青。'], '肤色三段色'),
       9: TX('头发作为一个整体，边缘和背景融合；脸的受光边缘清楚。最后签名。', ['头发是一块：', '先画头发的整体明暗，最后才挑几缕发丝。']) } },
   /* ---------- 油画 ---------- */
-  { key: 'oil-copper', mk: 'oil', kind: 'still', level: '基础', name: '铜壶与洋葱', sub: '油画 · 金属的质感', backdrop: '#2e2822', cloth: '#5a4a34', frame: { target: at(.03, .09, .01), fov: 26 },
-    objects: [OBJ('铜壶', [PR.lathe(at(-.03, 0, -.08), KETTLE, .16), PR.sphere(at(-.03, .172, -.08), .014), PR.cap(at(.03, .06, -.08), at(.11, .13, -.08), .011), PR.arc(at(-.03, .165, -.08), .065, .007, 0)], { c: '#c07040', metal: true, ks: 1.6, shin: 70 }, .01),
-      OBJ('红洋葱', [PR.sphere(at(.11, .045, .06), .045), PR.cone(at(.11, .07, .06), .022, .06)], { c: '#9a4a4a', ks: .35, shin: 30 }, .02), OBJ('黄洋葱', [PR.sphere(at(0, .038, .13), .038), PR.cone(at(0, .06, .13), .018, .05)], { c: '#d0a060', ks: .35, shin: 30 }, .02)],
-    darkNote: '金属的暗部很深，而且会映出周围暗色的背景，几乎和背景连在一起。', litNote: '铜壶亮部是橙红色，洋葱的亮部是带紫的红和暖黄。',
-    envNote: '铜壶像一面弯曲的镜子：下半截映出桌面的暖褐色，上半截映出暗背景，还能看到洋葱的倒影。', hlNote: '金属的高光又小又亮、边缘锋利，和旁边的暗色紧挨着，对比最强。',
-    t: { 1: TX('铜壶放在后面做主体，两个洋葱一前一后。先用熟赭薄薄铺满画布，暖色底能衬出铜的光泽。', ['暖底：', '画金属和暗背景，用暖褐色打底最合适。'], '暖色底'),
-      5: TX('铺铜壶和洋葱的暗部。金属的暗部很深，常常映出暗背景，边缘几乎和背景连在一起。', ['金属对比强：', '金属的明暗对比比任何东西都强：最暗紧挨着最亮。'], '金属的暗部'),
-      8: TX('用刮刀挑起钛白加一点黄，在铜壶的高光处一刀抹上去，边缘要锋利；洋葱的亮点用笔尖点厚。', ['锋利的高光：', '金属高光的边缘是硬的，一刀下去不要再碰它。'], '锋利的高光') } },
-  { key: 'oil-dutch', mk: 'oil', kind: 'still', level: '进阶', name: '荷兰静物', sub: '油画 · 暗背景里的光', backdrop: '#231e18', cloth: '#cfc7b6', frame: { target: at(0, .12, -.03), fov: 28 },
-    objects: [OBJ('酒瓶', [PR.lathe(at(-.11, 0, -.14), BOTTLE, .32)], { c: '#18261c', ks: 1.4, shin: 100 }), OBJ('葡萄', GRAPES, { c: '#4a2a52', ks: .7, shin: 50 }), OBJ('面包', [PR.ell(at(-.03, .035, .1), [.09, .04, .055], .4)], { c: '#b07a3a', ks: .08, shin: 10 })],
-    darkNote: '荷兰静物的暗部和背景几乎融成一片，只靠一点点微光分出形状。', litNote: '面包的亮部用土黄和熟赭厚涂，表现出粗糙的皮；葡萄的亮部是带紫的灰。',
-    envNote: '白桌布把光反射到葡萄和面包的底部，暗部里透出一点暖光。', hlNote: '每颗葡萄上都有一个小亮点，但不是每颗都一样亮，前面的几颗最亮。',
-    clothNote: '白色亚麻桌布是画面里最亮的大块，受光处带暖黄。',
-    t: { 1: TX('十七世纪的荷兰静物画，总是在很暗的背景前摆着酒瓶、葡萄和面包。先用熟赭薄涂底色，整幅画的基调是暖褐色的。', ['古典暗调：', '大面积的暗背景，让一束光照亮的物体显得格外珍贵。'], '荷兰静物'),
-      6: TX('铺亮部。一串葡萄先看成一个整体的球，画出它整体的明暗，再在亮部挑出几颗刻画。', ['先整后零：', '一串葡萄当一个大球画，最后只刻画最亮的几颗。'], '一串葡萄是一个球') } },
+  { key: 'oil-jug', mk: 'oil', kind: 'still', level: '基础', name: '陶壶、红椒与柠檬', sub: '油画 · 红黄与灰绿', backdrop: '#575a4c', cloth: '#8e7a58', frame: { target: at(.02, .12, 0), fov: 30 },
+    objects: [OBJ('陶壶', [PR.lathe(at(.04, 0, -.1), JUG, .26), PR.handle(at(.07, .185, -.1), .045, .0095, 0)], { c: '#6e5836', ks: .55, shin: 35 }, .008),
+      quiet(OBJ('木塞', [PR.cyl(at(.04, .255, -.1), .014, .025)], { c: '#a88c64', ks: .05, shin: 8 })),
+      OBJ('红椒', [0, 1, 2, 3].map(k => { const a = k * Math.PI / 2 + .3; return PR.ell(at(-.14 + Math.cos(a) * .02, .047, .07 + Math.sin(a) * .02), [.03, .046, .03]); }), { c: '#c42c1a', ks: 1.1, shin: 80 }, .012),
+      quiet(OBJ('椒柄', [PR.cap(at(-.14, .09, .07), at(-.165, .118, .075), .006)], { c: '#5c7a2c', ks: .4, shin: 30 })),
+      OBJ('柠檬', [PR.ell(at(.19, .034, .08), [.052, .034, .035], .15), PR.sphere(at(.24, .034, .072), .008)], { c: '#e8c42c', ks: .35, shin: 30 }, .006)],
+    drapes: [makeDrape({ type: 'table', x0: -.32, x1: .1, x0f: -.36, x1f: .16, top: [[.1, .009, .2, .15], [.17, .012, 1.5, -.25]], front: [[.07, .014, 0], [.12, .017, 1.1], [.05, .006, 2]], crumple: .45, color: '#b42e1c', yb: TABLE_Y - .32 })],
+    bgNote: '墙面是平整的灰绿色，靠近灯的一边稍亮，越往右越暗，笔触要平。', clothNote: '红布垂过桌沿，形成一排竖褶：受光的褶面是朱红，背光的褶子里加深红和一点群青。右边露出的木桌是暖褐色。',
+    darkNote: '陶壶暗部用熟褐加一点群青；红椒暗部是深红；柠檬暗部用土黄加一点绿。', litNote: '红椒亮部是饱和的朱红，柠檬亮部是柠檬黄加白，陶壶亮部是土黄偏灰。',
+    envNote: '红布的颜色会映到红椒和陶壶的底部，柠檬的黄也会映到旁边的桌面上。', hlNote: '红椒的蜡质表皮最亮，高光又大又亮；陶壶的釉面高光柔和；柠檬表皮粗，高光是一片细碎的亮点。',
+    t: { 1: TX('陶壶站在中间偏后，红椒躺在垂下来的红布上，柠檬放在右边的木桌上。红、黄、褐三种暖色，配上灰绿色的墙，冷暖一下就拉开了。先用熟赭薄涂底色。', ['补色：', '红椒的柄是绿色，墙是灰绿，和满画面的红正好互补。'], '冷暖对比') } },
+  { key: 'oil-pumpkin', mk: 'oil', kind: 'still', level: '进阶', name: '蓝罐、南瓜与干花', sub: '油画 · 蓝与橙的补色', backdrop: '#857452', cloth: '#7a6a4c', frame: { target: at(0, .17, 0), fov: 33 },
+    objects: [OBJ('蓝釉罐', [PR.lathe(at(.07, 0, -.08), JAR3, .2), PR.handle(at(.105, .165, -.08), .028, .007, 0), PR.handle(at(.035, .165, -.08), .028, .007, Math.PI)], { c: '#1d4a60', ks: 1.2, shin: 90 }, .006),
+      PUMPKIN('南瓜', at(-.12, .045, .07), .078), OBJ('干花', FLOWERS.heads, { c: '#f2f0ea', ks: .05, shin: 6 }), quiet(OBJ('花茎', FLOWERS.stems, { c: '#6a7a42', ks: .1, shin: 10 }))],
+    drapes: [makeDrape({ type: 'hang', x0: -.3, x1: .7, y0: TABLE_Y - .01, y1: 1.97, z: BACK_Z + .025, folds: [[.22, .012, .5], [.35, .01, 2]], crumple: .35, color: '#a08c64', tex: BURLAP('#a8946a') }),
+      makeDrape({ type: 'table', x0: -.32, x1: .72, x0f: -.34, x1f: .74, top: [[.14, .006, .3, .3], [.2, .007, 1.6, -.4]], front: [[.09, .01, 0], [.15, .012, 1.3]], crumple: .3, color: '#b09c72', tex: BURLAP('#b09c72') })],
+    bgNote: '粗麻布是带灰的土黄色，布纹粗糙，笔触可以干一点、碎一点，表现出麻布的颗粒感。', clothNote: '台面上的麻布和背景是同一块布，颜色一样，但台面受光更多、更亮。',
+    darkNote: '蓝罐暗部用普蓝加一点熟褐；南瓜暗部是熟赭加一点红。', litNote: '南瓜表面有橙有黄的斑纹，亮部用柠檬黄和朱红点出来；蓝罐亮部是群青加白。',
+    envNote: '橙色南瓜会把一点暖色映到蓝罐底部，蓝罐也会把冷色映到南瓜背光的一侧。', hlNote: '蓝罐的釉面像镜子，高光是一道亮白的竖条；干花的小白花用笔尖点厚。',
+    t: { 1: TX('蓝釉双耳罐和橙色南瓜是一对补色，背景和台面是同一块粗麻布，几枝干花从罐口斜斜地伸出来，打破方正的构图。先用熟赭薄涂底色。', ['补色：', '蓝和橙放在一起，两种颜色都会显得更鲜艳。'], '蓝橙补色') } },
   { key: 'oil-wheat', mk: 'oil', kind: 'land', level: '进阶', name: '麦田与云', sub: '油画 · 印象派的笔触', land: landWheat, regions: LAND_REG.wheat, horizon: 480, dots: WHEAT_DOTS,
     annPts: { sky: [600, 90, '天空'], far: [660, 464, '远山'], midl: [640, 540, '远处麦田'], near: [640, 860, '近处麦田'], main: [175, 400, '柏树'], horizon: [380, 480, '地平线'], sun: [330, 170, '受光的云顶'] },
     t: { 1: TX('用松节油把土黄调稀，薄薄罩满画布。麦田是暖色调的画，暖色的底会从笔触缝隙里透出来，让整幅画更暖。', ['透出来的底色：', '印象派的笔触之间常留缝隙，底色会从缝里透出来。'], '暖色底', '薄涂底色'),
@@ -1486,7 +1625,7 @@ const LESSON_SPECS = [
       6: TX('柏树用深绿加普蓝，笔触像火苗一样扭动着往上走，左边受光处带一点黄绿。', ['笔触有方向：', '柏树的笔触扭动向上，麦田的笔触横向起伏，一动一静。'], '火焰形的柏树'),
       7: TX('用刮刀和厚颜料堆出云顶的亮白和麦浪上的亮黄，再在近处点几朵红色的虞美人。', ['补色点睛：', '在绿色和金黄里点几处红，画面一下就活了。'], '厚涂的光'),
       8: TX('颜料干透后，用透明的熟赭在近处麦田和柏树底部薄薄罩一层，让前景更深、更有分量。最后签名。', ['前重后轻：', '前景压深一点，远处的天空和麦田就显得更亮更远。'], '前重后轻') } },
-  { key: 'oil-rembrandt', mk: 'oil', kind: 'still', head: true, level: '挑战', name: '伦勃朗光肖像', sub: '油画 · 古典光影', backdrop: '#1e1a16', cloth: '#3a3028', frame: { target: at(0, .18, -.02), fov: 23 },
+  { key: 'oil-rembrandt', mk: 'oil', kind: 'still', head: true, level: '挑战', name: '伦勃朗光肖像', sub: '油画 · 古典光影', backdrop: '#2a231c', cloth: '#3a3028', drapes: [hangBack('#2a231c', { crumple: .5 })], frame: { target: at(0, .18, -.02), fov: 23 },
     objects: [HEAD('肖像', at(0, 0, -.02), .5, { c: '#d6996e', ks: .18, shin: 22, wrap: .25 }, skinAlb(SKIN_WARM)), { ...HAIR('头发', at(0, 0, -.02), .5, '#241812'), quiet: true }],
     darkNote: '暗部颜料要薄、要透，让暖褐色的底色透上来，暗而不死。', litNote: '亮部的肤色厚涂，额头、鼻梁、颧骨一层比一层厚。',
     envNote: '暗部边缘有背景的一点微光，眼窝和鼻底的投影带暖红色。', hlNote: '额头、鼻尖和眼睛的高光用厚颜料一点点堆起来，在真实的光下会凸出画面。',
@@ -1506,7 +1645,7 @@ Object.assign(BASE.sketch, { mk: 'sketch', kind: 'still', level: '入门', backd
 Object.assign(BASE.gouache, { mk: 'gouache', kind: 'still', level: '入门', backdrop: '#7d8470', cloth: '#6f86a3' });
 Object.assign(BASE.oil, { mk: 'oil', kind: 'still', level: '入门', backdrop: '#2e2822', cloth: '#7a5f3e' });
 for (const sp of LESSON_SPECS) DEFS[sp.key] = genericDef(sp);
-const COURSES = { sketch: ['sketch', 'sk-geo', 'sk-jar', 'sk-land', 'sk-head'], gouache: ['gouache', 'gc-jar', 'gc-bottle', 'gc-lake', 'gc-head'], oil: ['oil', 'oil-copper', 'oil-dutch', 'oil-wheat', 'oil-rembrandt'] };
+const COURSES = { sketch: ['sketch', 'sk-geo', 'sk-bowl', 'sk-land', 'sk-head'], gouache: ['gouache', 'gc-teapot', 'gc-bottle', 'gc-lake', 'gc-head'], oil: ['oil', 'oil-jug', 'oil-pumpkin', 'oil-wheat', 'oil-rembrandt'] };
 
 const RT = {};
 function runtime(key) {
@@ -1768,9 +1907,15 @@ function buildLessonGroup(def) {
     g.userData = { PW, PH, photo: mesh(new THREE.PlaneGeometry(PW, PH), new THREE.MeshStandardMaterial({ map: t, roughness: .6, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: .25 }), V(0, 0, 0), b, false, true) };
   } else for (const o of def.spec.objects) {
     const m = o.mat, mt = new THREE.MeshStandardMaterial({ color: m.fn ? '#ffffff' : m.c, vertexColors: !!m.fn, roughness: m.metal ? .32 : m.ks > .8 ? .14 : m.ks > .3 ? .38 : .85, metalness: m.metal ? .55 : 0 });
-    if (o.mesh) mesh(o.mesh(), mt, null, g); else for (const pt of o.parts) mesh(pt.geo(), mt, null, g);
+    if (o.mesh) mesh(o.mesh(), mt, null, g); else for (const pt of o.parts) { const geo = pt.geo(); if (m.fn) colorize(geo, m.fn); mesh(geo, mt, null, g); }
   }
+  if (def.spec.drapes) for (const d of def.spec.drapes) for (const geo of d.mesh()) mesh(geo, new THREE.MeshStandardMaterial({ color: d.tex ? '#ffffff' : d.color, vertexColors: d.tex, roughness: .95, side: THREE.DoubleSide }), null, g, !d.hang, true);
   g.visible = false; return g;
+}
+function colorize(geo, fn) {
+  const pos = geo.attributes.position, cols = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) { const c = fn([pos.getX(i), pos.getY(i), pos.getZ(i)]); cols[i * 3] = c[0] ** 2.2; cols[i * 3 + 1] = c[1] ** 2.2; cols[i * 3 + 2] = c[2] ** 2.2; }
+  geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
 }
 const photoPoint = (grp, u, v) => grp.userData.photo.localToWorld(V((u - .5) * grp.userData.PW, (.5 - v) * grp.userData.PH, .004));
 function genericLabels(def) {
