@@ -158,8 +158,10 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:0}
 .kit.open{grid-column:1/-1;background:rgba(255,240,220,.09)}
 .kit-main{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:10px 12px 12px;text-align:left;border-radius:12px}
 .kit.open .kit-main{flex-direction:row;align-items:center}
-.kit .ico{display:grid;place-items:center;height:62px;border-radius:9px;background:#f1ece2;color:#2a2018}
-.kit.open .ico{width:86px;flex:none}
+.kit .ico{display:grid;place-items:center;height:104px;border-radius:9px;background:radial-gradient(ellipse at 50% 40%,#fbf8f2,#e8e0d2);color:#2a2018;overflow:hidden}
+.kit .ico img{width:100%;height:100%;object-fit:contain;transition:transform .3s}
+.kit-main:hover .ico img{transform:scale(1.06)}
+.kit.open .ico{width:180px;height:120px;flex:none}
 .kit .ico svg{width:42px;height:42px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .kit-t{display:flex;flex-direction:column;gap:2px;min-width:0;padding-right:22px}
 .kit-t b{font-size:14.5px}
@@ -2445,12 +2447,217 @@ const prepState = mk => (PREPSEL[mk] = PREPSEL[mk] || { have: {}, opt: {}, seen:
 const savePrep = () => { try { localStorage.setItem('studio-prep', JSON.stringify(PREPSEL)); } catch (e) {} };
 let prepOpenId = null;
 const prepIcon = k => `<svg viewBox="0 0 48 48" aria-hidden="true">${ICON[k]}</svg>`;
+/* 画材模型：同一套模型既渲染成卡片上的图，也在画室里“立起来”展示。单位是米，底部在 y = 0，都是立着的样子 */
+const PIG = ['#f4ede0', '#f2d23c', '#e8902a', '#e0482a', '#8e1c1a', '#c8306a', '#2f3f8f', '#5aa0d8', '#3f8a4a', '#6f7a4a', '#9a5a2a', '#5a3a26', '#1f1c1a'];
+function pp(g, geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; }
+const SILVER = () => std('#d6d8dc', { metalness: .8, roughness: .28 });
+// 一支笔：原点在笔杆底端，笔头朝上
+function brushProp(len, w, hair, handle, kind = 'flat') {
+  const g = new THREE.Group(), hl = len * .66;
+  pp(g, new THREE.CylinderGeometry(.0042, .0055, hl, 12), std(handle, { roughness: .35 }), 0, hl / 2);
+  if (kind === 'flat') {
+    pp(g, new THREE.BoxGeometry(w * .95, .026, .006), SILVER(), 0, hl + .013);
+    const b = pp(g, new THREE.BoxGeometry(w, len * .1, .006), std(hair, { roughness: .9 }), 0, hl + .026 + len * .05); b.scale.z = .9;
+  } else {
+    pp(g, new THREE.CylinderGeometry(.0045, .004, .022, 12), SILVER(), 0, hl + .011);
+    pp(g, new THREE.ConeGeometry(.004, len * .12, 12), std(hair, { roughness: .9 }), 0, hl + .022 + len * .06);
+  }
+  return g;
+}
+function pencilProp(body, h = .17) {
+  const g = new THREE.Group();
+  pp(g, new THREE.CylinderGeometry(.0046, .0046, h, 6), std(body, { roughness: .45 }), 0, h / 2);
+  pp(g, new THREE.CylinderGeometry(.0047, .0047, .004, 6), std('#d8b04a', { metalness: .5, roughness: .3 }), 0, h * .12);
+  pp(g, new THREE.ConeGeometry(.0046, .024, 6), std('#e6c79c'), 0, h + .012);
+  pp(g, new THREE.ConeGeometry(.0017, .008, 8), std('#2a2a2a'), 0, h + .02);
+  return g;
+}
+function tubeProp(col, s = 1) {
+  const g = new THREE.Group();
+  pp(g, new THREE.CylinderGeometry(.0065, .0065, .012, 12), std('#1f1c1a', { roughness: .4 }), 0, .006);
+  pp(g, new THREE.CylinderGeometry(.008, .012, .012, 16), SILVER(), 0, .018);
+  pp(g, new THREE.CylinderGeometry(.012, .0125, .06, 16), std('#e9e9ea', { metalness: .45, roughness: .32 }), 0, .054);
+  pp(g, new THREE.CylinderGeometry(.0124, .0124, .026, 16), std(col, { roughness: .45 }), 0, .05);
+  pp(g, new THREE.BoxGeometry(.026, .012, .004), std('#e9e9ea', { metalness: .45, roughness: .32 }), 0, .09);
+  g.scale.setScalar(s); return g;
+}
+function fan(g, items, step, x0 = 0) { items.forEach((it, i) => { it.rotation.z = (i - (items.length - 1) / 2) * step; it.position.x = x0 + (i - (items.length - 1) / 2) * .004; g.add(it); }); }
+function makeProp(it, mk, oi = 0) {
+  const g = new THREE.Group(), k = it.icon;
+  if (k === 'pencils') {
+    const n = oi === 1 ? 12 : 6, P = [];
+    for (let i = 0; i < n; i++) P.push(pencilProp(rgb(mixc(hex('#5f8a6a'), hex('#14301e'), i / (n - 1))), .17 - Math.abs(i - (n - 1) / 2) * .004));
+    fan(g, P, n > 6 ? .05 : .085);
+    if (oi === 2) { const c = new THREE.Group(); pp(c, new THREE.CylinderGeometry(.005, .005, .12, 8), std('#141210', { roughness: 1 }), 0, .06); c.position.set(.05, 0, .02); c.rotation.z = -.42; g.add(c); }
+  } else if (k === 'paper' || k === 'canvas' || k === 'board') {
+    const col = it.paper ? it.paper[oi] : '#f3f0e8', isC = k === 'canvas', isB = k === 'board';
+    const W2 = isC ? .3 : isB ? .3 : .27, H2 = isC ? .375 : isB ? .39 : .39, T = isC ? .02 : isB ? .012 : .002;
+    const s = new THREE.Group(); s.rotation.x = -.16; g.add(s);
+    if (isC) { pp(s, new THREE.BoxGeometry(W2, H2, T), [std('#c8a874'), std('#c8a874'), std('#c8a874'), std('#c8a874'), std(col, { roughness: .95 }), std('#c8a874')], 0, H2 / 2 + .01); }
+    else if (isB) { pp(s, new THREE.BoxGeometry(W2, H2, T), std('#c9a77a', { roughness: .7 }), 0, H2 / 2 + .01); pp(s, new THREE.BoxGeometry(W2 * .8, H2 * .62, .002), std('#f3f0e8', { roughness: .95 }), 0, H2 * .55 + .01, .007); for (const x of [-.07, .07]) pp(s, new THREE.BoxGeometry(.03, .022, .014), std('#1f1c1a', { metalness: .4, roughness: .4 }), x, H2 * .86 + .01, .009); }
+    else { pp(s, new THREE.BoxGeometry(W2, H2, T), std('#fbfaf6', { roughness: .95 }), .012, H2 / 2 + .01, -.006, 0, .06); pp(s, new THREE.BoxGeometry(W2, H2, T), std(col, { roughness: .95 }), 0, H2 / 2 + .01); }
+    pp(g, new THREE.BoxGeometry(W2 * .8, .012, .05), std('#8a5a36', { roughness: .6 }), 0, .006, .02);
+  } else if (k === 'eraser') {
+    const geo = new THREE.IcosahedronGeometry(.03, 3), pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), n = 1 + .12 * Math.sin(x * 160) * Math.cos(z * 140) + .08 * Math.sin(y * 210); pos.setXYZ(i, x * n * 1.35, y * n * .8 + (y > 0 ? Math.max(0, -Math.abs(x) * 2 + .02) : 0), z * n); }
+    geo.computeVertexNormals(); pp(g, geo, std('#8f969c', { roughness: 1 }), 0, .026);
+  } else if (k === 'cutter') {
+    const s = new THREE.Group(); s.rotation.z = -.3; g.add(s);
+    pp(s, new THREE.BoxGeometry(.022, .14, .013), std('#f0b62a', { roughness: .4 }), 0, .07);
+    pp(s, new THREE.BoxGeometry(.023, .03, .014), std('#1f1c1a', { roughness: .5 }), 0, .03);
+    const b = pp(s, new THREE.BoxGeometry(.016, .05, .0015), SILVER(), .002, .16); b.rotation.z = .12;
+  } else if (k === 'stump') {
+    [[.13, .006], [.1, .0045]].forEach(([h, r], i) => { const s = new THREE.Group(); s.position.x = i * .022 - .011; s.rotation.z = (i - .5) * .25; pp(s, new THREE.CylinderGeometry(r, r, h, 16), std('#d8d4cc', { roughness: 1 }), 0, h / 2 + .02); pp(s, new THREE.ConeGeometry(r, .02, 16), std('#8a8680', { roughness: 1 }), 0, h + .03); pp(s, new THREE.ConeGeometry(r, .02, 16), std('#d8d4cc'), 0, .01, 0, Math.PI); g.add(s); });
+  } else if (k === 'spray') {
+    pp(g, new THREE.CylinderGeometry(.03, .03, .16, 28), std('#24426a', { metalness: .5, roughness: .3 }), 0, .08);
+    pp(g, new THREE.CylinderGeometry(.0305, .0305, .06, 28), std('#f2efe8', { roughness: .5 }), 0, .09);
+    pp(g, new THREE.CylinderGeometry(.026, .03, .02, 28), SILVER(), 0, .17);
+    pp(g, new THREE.CylinderGeometry(.009, .009, .016, 12), std('#f2efe8'), 0, .186);
+  } else if (k === 'easel') {
+    const wm = std('#9c6b42', { roughness: .65 }), s = .55;
+    rod(V(-.1 * s, 0, .03), V(-.015, .5 * s, 0), .006, wm, g); rod(V(.1 * s, 0, .03), V(.015, .5 * s, 0), .006, wm, g); rod(V(0, 0, -.12 * s), V(0, .46 * s, -.01), .005, wm, g);
+    pp(g, new THREE.BoxGeometry(.13, .006, .02), wm, 0, .12, .025);
+    pp(g, new THREE.BoxGeometry(.11, .14, .006), std('#f3f0e8', { roughness: .95 }), 0, .195, .028, -.05);
+  } else if (k === 'sand') {
+    const s = new THREE.Group(); s.rotation.z = .12; g.add(s);
+    pp(s, new THREE.BoxGeometry(.036, .16, .01), std('#c9a77a'), 0, .08);
+    pp(s, new THREE.BoxGeometry(.034, .12, .002), std('#c8b48a', { roughness: 1 }), 0, .1, .006);
+    for (let i = 0; i < 5; i++) pp(s, new THREE.BoxGeometry(.034, .002, .0025), std('#6a6058'), 0, .045 + i * .025, .0065);
+  } else if (k === 'tube') {
+    if (mk === 'gouache' && oi === 2) {
+      for (let i = 0; i < 6; i++) { const x = (i % 3 - 1) * .05, z = (i < 3 ? -.03 : .03), c = PIG[[0, 1, 3, 6, 9, 11][i]]; pp(g, new THREE.CylinderGeometry(.021, .021, .032, 24), std('#f2efe8', { roughness: .3, transparent: true, opacity: .9 }), x, .016, z); pp(g, new THREE.CylinderGeometry(.019, .019, .024, 24), std(c, { roughness: .5 }), x, .014, z); pp(g, new THREE.CylinderGeometry(.0215, .0215, .008, 24), std(c, { roughness: .4 }), x, .036, z); }
+    } else {
+      const cols = (oi === 1 ? [1, 2, 3, 4, 5, 6, 7, 8, 10, 11] : [1, 3, 6, 9, 11]).map(i => PIG[i]), T = cols.map((c, i) => { const t = tubeProp(c); t.position.set((i - (cols.length - 1) / 2) * .03, 0, Math.abs(i - (cols.length - 1) / 2) * -.006); return t; });
+      T.forEach(t => g.add(t)); const w = tubeProp(PIG[0], 1.45); w.position.set(0, 0, .035); g.add(w);
+    }
+  } else if (k === 'brushes') {
+    const hair = mk === 'oil' ? (oi === 1 ? '#efe6d2' : '#d8c49a') : (oi === 1 ? '#8a6a42' : '#efe6d2'), hand = mk === 'oil' ? '#8a4b2a' : '#262626';
+    fan(g, [brushProp(.27, .024, hair, hand), brushProp(.25, .015, hair, hand), brushProp(.23, .008, hair, hand)], .16);
+  } else if (k === 'liner') {
+    fan(g, [brushProp(.21, .004, '#3a2a1e', '#a83a2a', 'round'), brushProp(.19, .003, '#3a2a1e', '#262626', 'round')], .14);
+  } else if (k === 'palette') {
+    const s = new THREE.Group(); s.rotation.x = 1.2; s.position.set(0, .08, 0); g.add(s);
+    if (mk === 'gouache') {
+      pp(s, new THREE.BoxGeometry(.25, .012, .12), std('#f6f4ef', { roughness: .35 }), 0, 0);
+      for (let r = 0; r < 2; r++) for (let c = 0; c < 8; c++) pp(s, new THREE.BoxGeometry(.024, .006, .022), std(PIG[(r * 8 + c) % PIG.length], { roughness: .45 }), -.105 + c * .03, .006, -.04 + r * .028);
+      pp(s, new THREE.BoxGeometry(.21, .002, .045), std('#ffffff', { roughness: .4 }), 0, .007, .03);
+    } else if (oi === 1) {
+      pp(s, new THREE.BoxGeometry(.23, .012, .3), std('#fbfaf6', { roughness: .9 }), 0, 0);
+      [0, 3, 6, 11].forEach((c, i) => { const b = pp(s, new THREE.SphereGeometry(.014, 14, 10), std(PIG[c], { roughness: .3 }), -.07 + i * .045, .008, -.11); b.scale.y = .4; });
+    } else {
+      const p = pp(s, new THREE.CylinderGeometry(.13, .13, .008, 48), std('#b08250', { roughness: .5 }), 0, 0); p.scale.set(1.25, 1, .9);
+      pp(s, new THREE.CylinderGeometry(.016, .016, .01, 20), std('#3a2a1e'), -.11, 0, .02);
+      [0, 1, 2, 3, 4, 6, 11].forEach((c, i) => { const a = -.4 + i * .42, b = pp(s, new THREE.SphereGeometry(.015, 14, 10), std(PIG[c], { roughness: .3 }), Math.cos(a) * .12, .008, Math.sin(a) * .085); b.scale.y = .45; });
+    }
+  } else if (k === 'bucket') {
+    const pl = std('#4a8ab8', { roughness: .35 });
+    for (const x of [-.046, .046]) { pp(g, new THREE.CylinderGeometry(.045, .04, .1, 28, 1, true), Object.assign(pl.clone(), { side: THREE.DoubleSide }), x, .05); pp(g, new THREE.CircleGeometry(.043, 28), std('#9fc8de', { roughness: .1 }), x, .08, 0, -Math.PI / 2); pp(g, new THREE.CircleGeometry(.04, 28), pl, x, .001, 0, -Math.PI / 2); }
+    const hnd = pp(g, new THREE.TorusGeometry(.07, .003, 8, 40, Math.PI), std('#2a2a2a'), 0, .1); hnd.rotation.x = 0;
+  } else if (k === 'sponge') {
+    pp(g, new THREE.BoxGeometry(.1, .065, .035), std('#f2c94c', { roughness: 1 }), 0, .0325);
+    const r = rngOf(5); for (let i = 0; i < 16; i++) pp(g, new THREE.SphereGeometry(.003 + r() * .003, 8, 6), std('#b88a1e', { roughness: 1 }), (r() - .5) * .09, .006 + r() * .055, .0176);
+  } else if (k === 'mister') {
+    pp(g, new THREE.CylinderGeometry(.024, .024, .1, 24), std('#cfe3ee', { roughness: .1, transparent: true, opacity: .6 }), 0, .05);
+    pp(g, new THREE.CylinderGeometry(.022, .022, .06, 24), std('#7fb4d8', { roughness: .1 }), 0, .03);
+    pp(g, new THREE.CylinderGeometry(.012, .016, .02, 20), std('#f2efe8'), 0, .11);
+    pp(g, new THREE.BoxGeometry(.02, .028, .03), std('#f2efe8'), 0, .134, .006);
+    pp(g, new THREE.BoxGeometry(.006, .026, .008), std('#f2efe8'), 0, .114, .024, .4);
+  } else if (k === 'can') {
+    pp(g, new THREE.BoxGeometry(.08, .14, .05), std('#c8ccd0', { metalness: .7, roughness: .3 }), 0, .07);
+    pp(g, new THREE.BoxGeometry(.081, .07, .051), std('#2f6a4a', { roughness: .5 }), 0, .07);
+    pp(g, new THREE.CylinderGeometry(.009, .011, .02, 16), std('#c8ccd0', { metalness: .7, roughness: .3 }), .022, .15);
+    pp(g, new THREE.CylinderGeometry(.011, .011, .01, 16), std('#e0482a'), .022, .162);
+  } else if (k === 'dropper') {
+    pp(g, new THREE.CylinderGeometry(.022, .022, .07, 24), std('#6a3a14', { roughness: .1, transparent: true, opacity: .85 }), 0, .035);
+    pp(g, new THREE.CylinderGeometry(.014, .022, .014, 24), std('#6a3a14', { roughness: .1 }), 0, .077);
+    pp(g, new THREE.CylinderGeometry(.012, .012, .016, 20), std('#1f1c1a', { roughness: .4 }), 0, .092);
+    pp(g, new THREE.SphereGeometry(.01, 16, 12), std('#2a2420', { roughness: .6 }), 0, .108).scale.y = 1.4;
+    pp(g, new THREE.BoxGeometry(.044, .03, .001), std('#e9d9a8'), 0, .035, .0222);
+  } else if (k === 'pknife') {
+    const s = new THREE.Group(); s.rotation.z = -.35; g.add(s);
+    pp(s, new THREE.CylinderGeometry(.006, .005, .1, 14), std('#7a4a2a', { roughness: .45 }), 0, .05);
+    pp(s, new THREE.CylinderGeometry(.0065, .0065, .012, 14), SILVER(), 0, .106);
+    rod(V(0, .112, 0), V(0, .13, .012), .0018, SILVER(), s);
+    const bl = pp(s, new THREE.SphereGeometry(1, 4, 2), SILVER(), 0, .17, .012); bl.scale.set(.022, .045, .0015);
+  } else if (k === 'jar') {
+    pp(g, new THREE.CylinderGeometry(.045, .045, .12, 28), std('#dfeaea', { roughness: .05, transparent: true, opacity: .35 }), 0, .06);
+    pp(g, new THREE.CylinderGeometry(.043, .043, .06, 28), std('#c9b98a', { roughness: .1, transparent: true, opacity: .55 }), 0, .03);
+    pp(g, new THREE.CylinderGeometry(.047, .047, .014, 28), SILVER(), 0, .127);
+    [-.02, .015].forEach((x, i) => { const b = brushProp(.2, .012, '#d8c49a', '#8a4b2a'); b.position.set(x, .02, 0); b.rotation.z = (i - .5) * .3; g.add(b); });
+  } else if (k === 'rag') {
+    const geo = new THREE.PlaneGeometry(.18, .18, 30, 30), pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); pos.setZ(i, Math.sin(x * 60) * .006 + Math.sin(y * 45 + x * 20) * .008); }
+    geo.computeVertexNormals();
+    const m = pp(g, geo, std('#ece6d8', { roughness: 1, side: THREE.DoubleSide }), 0, .09, 0, -.2);
+    for (const y of [.05, .13]) pp(g, new THREE.BoxGeometry(.18, .008, .004), std('#6a8ab0', { roughness: 1 }), 0, y, Math.sin(y * 45) * .008 + .003, -.2);
+  } else if (k === 'gloves') {
+    const gm = std('#5a8ad8', { roughness: .55 });
+    pp(g, new THREE.BoxGeometry(.075, .085, .026), gm, 0, .0425);
+    [-.027, -.009, .009, .027].forEach((x, i) => pp(g, new THREE.CapsuleGeometry(.0085, [.045, .055, .052, .04][i], 6, 12), gm, x, .085 + [.045, .055, .052, .04][i] / 2 + .006));
+    pp(g, new THREE.CapsuleGeometry(.009, .035, 6, 12), gm, -.045, .06, 0, 0, 0, .7);
+    pp(g, new THREE.CylinderGeometry(.04, .038, .03, 24), gm, 0, -.01).scale.z = .45;
+    g.position.y = .025;
+  }
+  return g;
+}
+
+/* 卡片上的画材图：用一个小渲染器把模型拍成图片，按画种和规格缓存 */
+let TR = null; const THUMB = {};
+function propThumb(it, mk, oi) {
+  const key = `${mk}:${it.id}:${oi}`;
+  if (THUMB[key]) return THUMB[key];
+  if (!TR) {
+    const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.setPixelRatio(2); r.setSize(240, 160); r.toneMapping = THREE.ACESFilmicToneMapping; r.toneMappingExposure = 1.05;
+    const sc = new THREE.Scene(); sc.add(new THREE.HemisphereLight('#fff4e4', '#9a8a76', 1.6));
+    const dl = new THREE.DirectionalLight('#ffffff', 2.4); dl.position.set(-1, 2, 2); sc.add(dl);
+    const fl = new THREE.DirectionalLight('#ffd9b0', .9); fl.position.set(2, 1, -1); sc.add(fl);
+    TR = { r, sc, cam: new THREE.PerspectiveCamera(26, 240 / 160, .005, 10) };
+  }
+  const g = makeProp(it, mk, oi); TR.sc.add(g); g.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(g), c = box.getCenter(V(0, 0, 0)), rad = box.getSize(V(0, 0, 0)).length() / 2;
+  TR.cam.position.copy(c).addScaledVector(V(.5, .38, 1).normalize(), rad / Math.sin(THREE.MathUtils.degToRad(13)) * .9); TR.cam.lookAt(c);
+  TR.r.render(TR.sc, TR.cam); THUMB[key] = TR.r.domElement.toDataURL('image/png');
+  TR.sc.remove(g); g.traverse(o => { if (o.geometry) o.geometry.dispose(); });
+  return THUMB[key];
+}
+
+/* 选中的画材在边桌上“立起来”：从桌面升起一个小展台，画材放大、慢慢转 */
+const showcase = new THREE.Group(); showcase.position.set(-.02, .735, .02); side.add(showcase); showcase.visible = false;
+const showPed = mesh(new THREE.CylinderGeometry(.1, .108, 1, 48).translate(0, .5, 0), std('#efe7d8', { roughness: .55 }), V(0, 0, 0), showcase, true, true);
+const showRing = mesh(new THREE.TorusGeometry(.11, .0035, 8, 72), new THREE.MeshBasicMaterial({ color: '#e8a63f' }), V(0, .002, 0), showcase, false, false); showRing.rotation.x = Math.PI / 2;
+const showLight = new THREE.PointLight('#ffe2b8', 0, 1.2, 2); showLight.position.set(.08, .5, .2); showcase.add(showLight);
+let showProp = null, showA = 0, showOn = false, showKey = '';
+function showItem(it, mk, oi) {
+  const key = it ? `${mk}:${it.id}:${oi}` : '';
+  if (key === showKey) return; showKey = key;
+  if (showProp) { showcase.remove(showProp); showProp = null; }
+  showOn = !!it; if (!it) return;
+  const g = makeProp(it, mk, oi), box = new THREE.Box3().setFromObject(g), sz = box.getSize(V(0, 0, 0)), c = box.getCenter(V(0, 0, 0));
+  const s = .2 / Math.max(sz.x, sz.y, sz.z * 1.4);
+  g.position.set(-c.x, -box.min.y, -c.z);
+  showProp = new THREE.Group(); showProp.add(g); showProp.userData.s = s; showProp.scale.setScalar(.001); showcase.add(showProp);
+  showcase.visible = true;
+}
+function tickShowcase() {
+  showA += ((showOn && S.prep ? 1 : 0) - showA) * .12;
+  if (showA < .005 && !showOn) { showcase.visible = false; return; }
+  const h = .05 * showA; showPed.scale.y = Math.max(h, .0001);
+  showRing.material.opacity = showA; showLight.intensity = 1.6 * showA;
+  if (showProp) { const e = 1 + 2.4 * Math.pow(showA - 1, 3) + 1.4 * Math.pow(showA - 1, 2); showProp.scale.setScalar(showProp.userData.s * Math.max(.001, e)); showProp.position.y = h + .003; showProp.rotation.y = Math.sin(performance.now() / 1400) * .55; }
+}
+function showCamFor() { const C = showcase.localToWorld(V(0, .13, 0)); CAMS.show = { p: C.clone().add(V(.06, .26, .8)), t: C.clone().add(V(0, -.03, 0)) }; }
+function syncShow(camMove) {
+  const mk = MK(), it = prepOpenId && [...PREP[mk].must, ...PREP[mk].nice].find(x => x.id === prepOpenId);
+  showItem(it, mk, it ? (prepState(mk).opt[it.id] ?? 0) : 0);
+  if (camMove) { if (it) { showCamFor(); setCam('show'); } else setCam(innerWidth > 760 ? 'prep' : 'tools'); }
+}
 function renderPrep() {
   const def = rt.def, mk = def.mk, P = PREP[mk], st = prepState(mk), kind = def.kind === 'head' ? 'head' : def.kind === 'land' ? 'land' : 'still';
   const card = it => {
     const have = !!st.have[it.id], open = prepOpenId === it.id, oi = st.opt[it.id] ?? 0;
     return `<div class="kit${have ? ' have' : ''}${open ? ' open' : ''}" data-id="${it.id}">
-      <button type="button" class="kit-main" data-act="open" aria-expanded="${open}"><span class="ico">${prepIcon(it.icon)}</span><span class="kit-t"><b>${it.name}</b><span class="spec">${it.opts ? it.opts[oi] + ' · ' : ''}${it.spec}</span></span></button>
+      <button type="button" class="kit-main" data-act="open" aria-expanded="${open}"><span class="ico"><img src="${propThumb(it, mk, oi)}" alt="" width="240" height="160"></span><span class="kit-t"><b>${it.name}</b><span class="spec">${it.opts ? it.opts[oi] + ' · ' : ''}${it.spec}</span></span></button>
       <button type="button" class="chk" data-act="have" aria-pressed="${have}" aria-label="${have ? '取消勾选' : '我已经有了'}：${it.name}"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></button>
       ${open ? `<div class="kit-more"><p>${it.use}</p>${it.opts ? `<div class="opts" role="group" aria-label="选择${it.name}">${it.opts.map((o, i) => `<button type="button" class="opt" data-act="opt" data-i="${i}" aria-pressed="${i === oi}">${it.paper ? `<i style="background:${it.paper[i]}"></i>` : ''}${o}</button>`).join('')}</div>` : ''}<p class="alt"><span>没有怎么办：</span>${it.alt}</p></div>` : ''}
     </div>`;
@@ -2481,10 +2688,11 @@ function openPrep() {
   if (S.step !== 0) goStep(0, false);
   setView('room'); setCam(innerWidth > 760 ? 'prep' : 'tools');
   $('prep').hidden = false; document.body.classList.add('prepping'); $('prepBtn').setAttribute('aria-pressed', 'true');
-  renderPrep(); prepFocus(null); $('prepBody').scrollTop = 0;
+  renderPrep(); prepFocus(null); syncShow(false); $('prepBody').scrollTop = 0;
 }
 function closePrep(start) {
   S.prep = false; $('prep').hidden = true; document.body.classList.remove('prepping'); $('prepBtn').setAttribute('aria-pressed', 'false');
+  prepOpenId = null; showItem(null);
   prepState(MK()).seen = true; savePrep(); buildPaintTools();
   if (start) goStep(1, true); else updateUI();
 }
@@ -2494,7 +2702,7 @@ $('prepBody').addEventListener('click', e => {
   if (b.dataset.act === 'open') { prepOpenId = prepOpenId === id ? null : id; prepFocus(prepOpenId); }
   else if (b.dataset.act === 'have') { st.have[id] = !st.have[id]; savePrep(); }
   else if (b.dataset.act === 'opt') { st.opt[id] = +b.dataset.i; st.have[id] = true; savePrep(); }
-  renderPrep();
+  renderPrep(); syncShow(b.dataset.act === 'open');
   const el = $('prepBody').querySelector(`.kit[data-id="${id}"] [data-act="${b.dataset.act}"]${b.dataset.act === 'opt' ? `[data-i="${b.dataset.i}"]` : ''}`); if (el) el.focus();
 });
 $('prepGo').onclick = () => closePrep(true);
@@ -2525,6 +2733,7 @@ function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add
 
 /* ================= 渲染循环 ================= */
 function resize() {
+  camOff = -1;
   const r = $('stage').getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(1, r.height); camera.updateProjectionMatrix();
   const rr = refCanvas.parentElement.getBoundingClientRect(); refR.setSize(rr.width, rr.height, false); refCam.aspect = rr.width / Math.max(1, rr.height); refCam.updateProjectionMatrix();
 }
@@ -2564,11 +2773,15 @@ function updateTool2d() {
   sh.style.opacity = (.42 - L * .22).toFixed(2);
 }
 let frame = 0;
+let camOff = -1;
 function loop(now) {
   requestAnimationFrame(loop); frame++;
   tickAnim(now);
   if (camTween) { const t = ease(clamp((now - camTween.s) / camTween.d, 0, 1)); camera.position.lerpVectors(camTween.p0, camTween.p1, t); controls.target.lerpVectors(camTween.t0, camTween.t1, t); if (t >= 1) camTween = null; }
   controls.update();
+  tickShowcase();
+  { const pw = S.prep && innerWidth > 760 ? $('prep').getBoundingClientRect().width + 16 : 0;
+    if (pw !== camOff) { camOff = pw; const w = gl.clientWidth, h = gl.clientHeight; if (pw) camera.setViewOffset(w, h, pw / 2, 0, w, h); else camera.clearViewOffset(); } }
   // 工具跟随笔尖
   if (S.paint) { toolKind = ptool && ptool.erase && MK() === 'sketch' ? 'eraser' : MK() === 'sketch' ? 'pencil' : MK() === 'oil' && S.knife ? 'knife' : 'brush';
     toolStyle = toolKind === 'pencil' ? (/[48]B/.test(ptool.id) ? 'shade' : 'line') : toolKind; if (ptool.sw) toolColor = ptool.sw; }
