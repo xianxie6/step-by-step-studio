@@ -136,6 +136,58 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:0}
 .pbtn{height:40px;padding:0 12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-size:13px}
 .pbtn.done{background:var(--paper);color:#241a10;font-weight:700}
 
+/* 准备画材 */
+#prep{position:absolute;inset:16px 416px 16px 376px;display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);border-radius:16px;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);overflow:hidden;z-index:4}
+#prep[hidden]{display:none!important}
+#prepBody{flex:1;overflow:auto;padding:20px 22px 12px;scrollbar-width:thin}
+.prep-top{position:absolute;top:12px;right:12px}
+.prep-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--accent)}
+#prepBody h2{margin:6px 0 4px;font-family:var(--display);font-size:32px;line-height:1.1}
+.prep-sub{margin:0;color:var(--mute);font-size:14px}
+.prep-facts{display:grid;grid-template-columns:repeat(3,1fr);margin:16px 0 4px;border:1px solid var(--line);border-radius:12px}
+.prep-facts div{padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.prep-facts div+div{border-left:1px solid var(--line)}
+.fk{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--mute)}
+.fv{font-size:16px;font-weight:700}
+.prep-h3{display:flex;justify-content:space-between;margin:20px 0 8px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--mute)}
+.prep-before{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:1.6}
+.prep-before li::marker{color:var(--accent);font-family:var(--mono)}
+.kits{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.kit{position:relative;border:1px solid var(--line);border-radius:12px;background:var(--panel-2);transition:border-color .2s,background .2s}
+.kit.have{border-color:rgba(232,166,63,.45)}
+.kit.open{grid-column:1/-1;background:rgba(255,240,220,.09)}
+.kit-main{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:100%;padding:10px 12px 12px;text-align:left;border-radius:12px}
+.kit.open .kit-main{flex-direction:row;align-items:center}
+.kit .ico{display:grid;place-items:center;height:62px;border-radius:9px;background:#f1ece2;color:#2a2018}
+.kit.open .ico{width:86px;flex:none}
+.kit .ico svg{width:42px;height:42px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.kit-t{display:flex;flex-direction:column;gap:2px;min-width:0;padding-right:22px}
+.kit-t b{font-size:14.5px}
+.kit-t .spec{font-size:12px;color:var(--mute);line-height:1.45}
+.chk{position:absolute;top:10px;right:10px;width:24px;height:24px;border-radius:50%;border:1.5px solid rgba(255,236,210,.35);display:grid;place-items:center;background:rgba(22,18,15,.6)}
+.chk svg{width:14px;height:14px;fill:none;stroke:var(--accent-ink);stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;opacity:0}
+.kit.have .chk{background:var(--accent);border-color:var(--accent)}
+.kit.have .chk svg{opacity:1}
+.kit-more{padding:0 14px 14px;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.65}
+.kit-more p{margin:0}
+.kit-more .alt{padding:8px 10px;border-radius:8px;background:rgba(143,179,224,.1);color:var(--fg)}
+.kit-more .alt span{color:#8fb3e0;font-weight:700}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;border:1px solid var(--line);font-size:13px;color:var(--mute)}
+.opt i{width:14px;height:14px;border-radius:3px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.2)}
+.opt[aria-pressed="true"]{border-color:var(--accent);color:var(--fg);background:rgba(232,166,63,.14)}
+.prep-foot{display:flex;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line)}
+.prep-prog{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:11.5px;color:var(--mute)}
+.prep-track{height:4px;border-radius:99px;background:var(--panel-2);overflow:hidden}
+#prepBar{height:100%;background:var(--accent);transition:width .3s}
+.prep-foot .cta{padding:11px 18px}
+.linkbtn{font-size:13px;color:var(--mute);text-decoration:underline;text-underline-offset:3px}
+.step-prep{margin-top:10px}
+@media (min-width:761px){
+  body.prepping .left .stats,body.prepping .left .stepcard,body.prepping .left .refcard{display:none}
+  body.prepping .right{display:none}
+  body.prepping #prep{left:auto;right:max(16px,env(safe-area-inset-right,0px));width:min(600px,48%)}
+}
 #help{position:absolute;inset:0;display:grid;place-items:center;background:rgba(10,8,6,.6);z-index:20;padding:16px}
 #help[hidden]{display:none!important}
 #help .card{max-width:420px;padding:20px 22px;line-height:1.8;font-size:14px}
@@ -149,6 +201,10 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:0}
   #sheet{inset:16px 412px 16px 372px}
 }
 @media (max-width:760px){
+  #prep{position:fixed;inset:50% 0 0 0;border-radius:16px 16px 0 0;z-index:25}
+  .prep-facts .fv{font-size:14px}
+  #prepBody h2{font-size:26px}
+  .kits{grid-template-columns:repeat(2,1fr)}
   body{overflow:hidden}
   #stage{bottom:auto;height:50%}
   h1{font-size:30px}
@@ -234,11 +290,22 @@ input[type=range]{width:100%;accent-color:var(--accent);margin:0}
           <button type="button" id="vRoom" data-view="room" aria-pressed="true">画室</button>
           <button type="button" id="vSheet" data-view="sheet" aria-pressed="false">画纸</button>
         </div>
+        <button class="ib" id="prepBtn" type="button" aria-label="准备画材" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M5 7h14l-1 13H6z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/><path d="M9 12l2 2 4-4"/></svg></button>
         <button class="ib" id="orbit" type="button" aria-label="自动环绕" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 12a9 4 0 1 0 18 0 9 4 0 1 0-18 0"/><path d="M17 8.5l2.6.8-.6 2.6"/></svg></button>
         <button class="ib" id="resetCam" type="button" aria-label="重置视角"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 15v5h-5M4 15v5h5M20 9V4h-5"/></svg></button>
         <button class="ib" id="helpBtn" type="button" aria-label="操作说明"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.8-2.5 2.2-2.5 3.8M12 17.2v.1"/></svg></button>
       </div>
       <button class="cta" id="paintBtn" type="button"><svg viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 6l3 3"/></svg><span id="paintBtnText">自己动手画一张</span></button>
+    </section>
+
+    <section id="prep" hidden aria-label="准备画材">
+      <div id="prepBody"></div>
+      <div class="prep-top"><button class="ib" id="prepClose" type="button" aria-label="关闭画材清单"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+      <div class="prep-foot">
+        <div class="prep-prog"><span id="prepCount">必备画材 0 / 5</span><div class="prep-track"><div id="prepBar"></div></div></div>
+        <button class="linkbtn" id="prepSkip" type="button">跳过</button>
+        <button class="cta" id="prepGo" type="button">准备好了，开始画</button>
+      </div>
     </section>
 
     <div id="paintbar" class="card" hidden>
@@ -1831,6 +1898,11 @@ const blobs = DEFS.gouache.counter.items.map(([n, c], i) => { const a = -2.6 + i
 const bucket = mesh(new THREE.CylinderGeometry(.06, .052, .11, 28, 1, true), std('#8aa3b8', { roughness: .3, metalness: .3, side: THREE.DoubleSide }), V(.23, .795, .13), side);
 mesh(new THREE.CircleGeometry(.058, 28), std('#5f7b8c', { roughness: .1 }), V(.23, .82, .13), side).rotation.x = -Math.PI / 2;
 const brushJar = new THREE.Group(); brushJar.position.set(.25, .74, -.13); side.add(brushJar);
+const tubes = new THREE.Group(); tubes.position.set(-.21, .75, -.13); side.add(tubes);
+['#f4ede0', '#e0482a', '#2f3f8f', '#f2d23c', '#5a3a26'].forEach((c, i) => { const t = mesh(new THREE.CylinderGeometry(.011, .011, .07, 14), std('#d8d8d8', { metalness: .6, roughness: .3 }), V(i * .026, 0, (i % 2) * .012), tubes); t.rotation.z = Math.PI / 2; t.rotation.y = .3; mesh(new THREE.CylinderGeometry(.0113, .0113, .03, 14), std(c, { roughness: .5 }), V(0, .012, 0), t); });
+const oilBottle = new THREE.Group(); oilBottle.position.set(-.08, .74, -.16); side.add(oilBottle);
+mesh(new THREE.CylinderGeometry(.022, .024, .09, 20), std('#c8a85a', { roughness: .2, transparent: true, opacity: .85 }), V(0, .045, 0), oilBottle); mesh(new THREE.CylinderGeometry(.01, .01, .02, 12), std('#2a2a2a'), V(0, .1, 0), oilBottle);
+mesh(new THREE.CylinderGeometry(.016, .016, .06, 16), std('#a87830', { roughness: .2, transparent: true, opacity: .85 }), V(.045, .03, .01), oilBottle);
 mesh(new THREE.CylinderGeometry(.04, .04, .1, 20), std('#4f5b4a', { roughness: .6 }), V(0, .05, 0), brushJar);
 for (let i = 0; i < 5; i++) rod(V((i - 2) * .012, .05, (i % 2) * .01), V((i - 2) * .03, .27 + (i % 3) * .02, (i % 2 - .5) * .04), .004, std(i % 2 ? '#a0522d' : '#2a2a2a'), brushJar);
 
@@ -1994,7 +2066,11 @@ const LABEL_SETS = {
 let labels = [];
 function buildLabels(key) {
   const box = $('labels'); box.innerHTML = ''; scene.updateMatrixWorld(true);
-  labels = (LABEL_SETS[key] ? LABEL_SETS[key]() : genericLabels(DEFS[key])).map(([id, text, pos]) => { const el = document.createElement('div'); el.className = 'tag'; el.textContent = text; box.appendChild(el); return { id, el, pos }; });
+  const list = LABEL_SETS[key] ? LABEL_SETS[key]() : genericLabels(DEFS[key]), mk0 = DEFS[key].mk, wp = o => o.getWorldPosition(V(0, 0, 0));
+  if (mk0 !== 'sketch') list.push(['tubes', '颜料', wp(tubes).add(V(.05, .04, 0))]);
+  if (mk0 === 'oil') list.push(['bottle', '松节油 · 调色油', wp(oilBottle).add(V(0, .14, 0))]);
+  if (mk0 === 'sketch' && !list.some(l => l[0] === 'knife')) list.push(['knife', '美工刀', wp(knifeObj).add(V(0, .03, 0))]);
+  labels = list.map(([id, text, pos]) => { const el = document.createElement('div'); el.className = 'tag'; el.textContent = text; box.appendChild(el); return { id, el, pos }; });
 }
 
 /* 相机机位 */
@@ -2002,6 +2078,7 @@ scene.updateMatrixWorld(true);
 const CAMS = {
   overview: { p: V(2.25, 1.85, 2.95), t: V(-.2, .95, -.45) },
   tools: { p: V(1.35, 1.32, 1.75), t: V(.5, .76, .7) },
+  prep: { p: V(1.22, 1.5, 1.66), t: V(.68, .76, .6) },
   easel: { p: V(.3, 1.52, 1.75), t: V(-.6, 1.12, .05) },
   still: { p: V(1.15, 1.45, .55), t: V(-.05, 1.0, -.95) }
 };
@@ -2033,6 +2110,7 @@ function swapPiece(key) {
   const tgt = def.kind === 'land' ? [.2, 1.2, -1.42] : def.spec ? def.spec.frame.target : [.2, 1.03, -1.2];
   refCam.fov = def.kind === 'land' ? 30 : def.spec ? Math.min(30, def.spec.frame.fov + 7) : 30; refCam.lookAt(tgt[0], tgt[1], tgt[2]); refCam.updateProjectionMatrix();
   S.knife = false;
+  tubes.visible = def.mk !== 'sketch'; oilBottle.visible = def.mk === 'oil';
   scene.updateMatrixWorld(true);
   buildAnnotations(key); buildLabels(key);
   renderCourseUI();
@@ -2055,7 +2133,7 @@ function openLesson(key) {
   setPlaying(false);
   const d = DEFS[key], fresh = !RT[key];
   if (fresh) toast(d.kind === 'land' ? '正在准备风景照片…' : d.kind === 'head' ? '正在摆放头像…' : '正在摆放静物…');
-  setTimeout(() => { swapPiece(key); goStep(1, true); }, fresh ? 60 : 0);
+  setTimeout(() => { swapPiece(key); if (S.prep || !prepState(d.mk).seen) openPrep(); else goStep(1, true); }, fresh ? 60 : 0);
 }
 function gainsUpTo(k) { const g = new Set(); for (let i = 0; i <= k; i++) for (const x of rt.def.steps[i].gain || []) g.add(x); return g; }
 function updateUI() {
@@ -2063,7 +2141,7 @@ function updateUI() {
   $('stStep').textContent = k;
   const g = gainsUpTo(k); $('st2').textContent = g.size;
   $('stepEyebrow').textContent = k === 0 ? `开画之前 · ${st.title}` : `第 ${k} 步 · ${st.title}`;
-  $('stepText').innerHTML = st.text; $('stepTip').innerHTML = st.tip;
+  $('stepText').innerHTML = st.text + (k === 0 ? '<div class="step-prep"><button class="pbtn done" type="button" data-prep>打开画材清单</button></div>' : ''); $('stepTip').innerHTML = st.tip;
   $('navTitle').textContent = st.title; $('navSub').textContent = `第 ${k} 步，共 ${N} 步 · ${st.tool}`;
   $('slider').value = k; $('refTitle').textContent = st.ref;
   [...$('ticks').children].forEach((b, i) => { b.className = i === k ? 'cur' : i < k ? 'done' : ''; });
@@ -2081,6 +2159,7 @@ let strokesBefore = 0, strokesNow = 0;
 function updateStrokeCount() { $('st3').textContent = (strokesBefore + strokesNow).toLocaleString('zh-CN'); }
 
 function goStep(k, animate) {
+  if (S.prep && k !== 0) { S.prep = false; $('prep').hidden = true; document.body.classList.remove('prepping'); $('prepBtn').setAttribute('aria-pressed', 'false'); }
   const N = rt.def.steps.length - 1; k = clamp(k, 0, N);
   if (S.paint) exitPaint(true);
   S.step = k; clearTimeout(playTimer);
@@ -2153,6 +2232,7 @@ function idleBake() {
 }
 
 function setView(v) {
+  if (v === 'sheet' && S.prep) closePrep(false);
   S.view = v; $('vRoom').setAttribute('aria-pressed', v === 'room'); $('vSheet').setAttribute('aria-pressed', v === 'sheet');
   $('sheet').hidden = v !== 'sheet'; $('labels').hidden = v !== 'room'; dirty = true;
 }
@@ -2163,15 +2243,15 @@ const PAINT_TOOLS = {
   gouache: [...DEFS.gouache.counter.items.map(([n, c]) => ({ id: n, sw: c })), { id: '画布色', sw: '#efe8da', erase: true }],
   oil: [['钛白', '#f4ede0'], ['柠檬黄', '#f0d030'], ['土黄', '#c8902e'], ['熟赭', '#a8683a'], ['朱红', '#d8452a'], ['群青', '#2b3f8a'], ['熟褐', '#4a2e1c'], ['象牙黑', '#1f1c1a']].map(([n, c]) => ({ id: n, sw: c })).concat([{ id: '刮刀', knife: true }])
 };
-let ptool = null;
+let ptool = null, CUR_TOOLS = [];
 function buildPaintTools() {
-  const list = PAINT_TOOLS[MK()]; ptool = list[{ sketch: 1, gouache: 6, oil: 4 }[MK()]];
+  const list = CUR_TOOLS = toolsFor(MK()); ptool = list.find(t => t.id === { sketch: 'HB', gouache: '朱红', oil: '朱红' }[MK()]) || list[0];
   $('tools').innerHTML = list.map((t, i) => t.sw ? `<button type="button" class="tool sw" data-i="${i}" title="${t.id}" aria-label="${t.id}" style="background:${t.sw}"></button>` : `<button type="button" class="tool" data-i="${i}">${t.id}</button>`).join('');
   syncToolBtns();
   $('bsize').value = MK() === 'sketch' ? 3 : 5; S.knife = false;
 }
-function syncToolBtns() { const list = PAINT_TOOLS[MK()]; [...$('tools').children].forEach((b, i) => b.setAttribute('aria-pressed', list[i] === ptool || !!(list[i].knife && S.knife))); }
-$('tools').addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; const t = PAINT_TOOLS[MK()][+b.dataset.i]; if (t.knife) S.knife = !S.knife; else ptool = t; syncToolBtns(); });
+function syncToolBtns() { const list = CUR_TOOLS; [...$('tools').children].forEach((b, i) => b.setAttribute('aria-pressed', list[i] === ptool || !!(list[i].knife && S.knife))); }
+$('tools').addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (!b) return; const t = CUR_TOOLS[+b.dataset.i]; if (t.knife) S.knife = !S.knife; else ptool = t; syncToolBtns(); });
 
 const undo = [];
 function enterPaint() {
@@ -2179,6 +2259,7 @@ function enterPaint() {
   setPlaying(false);
   S.paint = true; document.body.classList.add('painting'); $('paintbar').hidden = false; $('paintBtnText').textContent = '正在画 · 点“完成”回到步骤';
   if (rt.user) octx.drawImage(rt.user, 0, 0);
+  S.paintPaper = rt.userPaper || rt.paper; paperPat = null;
   markDirty(); undo.length = 0;
   const g = ctx2($('guide')); g.clearRect(0, 0, W, H); g.drawImage(ensureSnap(rt, rt.def.steps.length - 1), 0, 0);
   $('guide').hidden = !S.guide;
@@ -2197,8 +2278,7 @@ let paperPat = null;
 function paintSeg(x0, y0, x1, y1, pr, st) {
   const t = ptool, size = +$('bsize').value, d = Math.hypot(x1 - x0, y1 - y0), n = Math.max(1, Math.ceil(d / 1.2));
   if (t.erase) {
-    octx.save(); octx.fillStyle = MK() === 'sketch' ? (paperPat || (paperPat = octx.createPattern(rt.paper, 'no-repeat'))) : t.sw;
-    if (MK() === 'sketch') paperPat = octx.createPattern(rt.paper, 'no-repeat'), octx.fillStyle = paperPat;
+    octx.save(); octx.fillStyle = MK() === 'sketch' ? (paperPat || (paperPat = octx.createPattern(S.paintPaper || rt.paper, 'no-repeat'))) : t.sw;
     const rad = MK() === 'sketch' ? 3 + size * 2.2 : 3 + size * 3;
     octx.globalAlpha = MK() === 'sketch' ? .18 : .9;
     for (let i = 0; i <= n; i += 2) { const u = i / n; octx.beginPath(); octx.arc(lerp(x0, x1, u), lerp(y0, y1, u), rad, 0, 7); octx.fill(); }
@@ -2268,7 +2348,7 @@ $('help').addEventListener('click', e => { if (e.target.id === 'help') $('help')
 $('paintBtn').onclick = () => S.paint ? exitPaint() : enterPaint();
 $('exitPaint').onclick = () => exitPaint();
 $('undoBtn').onclick = () => { const d = undo.pop(); if (d) { octx.putImageData(d, 0, 0); markDirty(); const c = rt.user || mk(); ctx2(c).drawImage(out, 0, 0); rt.user = c; } else toast('没有可以撤销的笔画了'); };
-$('newBtn').onclick = () => { pushUndo(); octx.drawImage(rt.paper, 0, 0); markDirty(); toast('换好新纸了'); };
+$('newBtn').onclick = () => { pushUndo(); S.paintPaper = rt.userPaper = chosenPaper(); octx.drawImage(S.paintPaper, 0, 0); paperPat = null; markDirty(); toast('换好新纸了，用的是你在准备页选的纸'); };
 $('guideBtn').onclick = () => { S.guide = !S.guide; $('guideBtn').setAttribute('aria-pressed', S.guide); $('guide').hidden = !S.guide; $('guideBtn').style.borderColor = S.guide ? 'var(--accent)' : ''; };
 addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT' || !$('help').hidden) { if (e.key === 'Escape') $('help').hidden = true; return; }
@@ -2276,6 +2356,170 @@ addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') { setPlaying(false); goStep(S.step - 1, true); }
   else if (e.key === ' ' && e.target.tagName !== 'BUTTON') { e.preventDefault(); setPlaying(!S.playing); }
 });
+
+/* ================= 开画之前：准备画材 =================
+   学 Bygga 的“工具 → 零件 → 开始组装”：每个画种先列出必备和“有更好”的画材，
+   点开卡片看用途、没有怎么办，还能选规格；选的纸和笔会带进“自己动手画” */
+const ICON = {
+  pencils: '<path d="M8 38l3-10 18-18 7 7-18 18z"/><path d="M11 28l7 7"/><path d="M16 42l3-10 18-18 7 7-18 18z" opacity=".55"/><path d="M8 38l-1 4 4-1"/>',
+  paper: '<path d="M12 6h17l8 8v28H12z"/><path d="M29 6v8h8"/><path d="M17 21h14M17 27h14M17 33h9"/>',
+  eraser: '<path d="M11 31c-4-6 2-14 10-12 4-6 14-5 15 3 6 2 6 10 0 12-3 5-11 6-15 2-5 2-9-1-10-5z"/><path d="M18 27c2 2 5 2 7 0" opacity=".6"/>',
+  cutter: '<path d="M5 31l19-11h17v9H22z"/><path d="M33 20l7-7M27 25h10"/>',
+  board: '<rect x="8" y="11" width="32" height="31" rx="2"/><rect x="17" y="6" width="14" height="8" rx="2"/><path d="M14 20h20" opacity=".5"/>',
+  stump: '<path d="M12 37l19-19 5 5-19 19-7 2z"/><path d="M27 14l7 7M10 44l2-7"/>',
+  spray: '<rect x="15" y="17" width="16" height="25" rx="3"/><path d="M19 17v-5h8v5M27 9h4"/><path d="M34 6l3-2M34 9h4M34 12l3 2"/>',
+  easel: '<rect x="12" y="8" width="24" height="18" rx="1"/><path d="M24 4v4M15 44l9-18 9 18M18 37h12"/>',
+  sand: '<rect x="9" y="14" width="30" height="20" rx="2"/><path d="M13 20h22M13 25h22M13 30h22" stroke-dasharray="1.5 3"/>',
+  tube: '<path d="M18 9h12v3l4 4v22l-3 5H17l-3-5V16l4-4z"/><path d="M20 4h8v5h-8z"/><path d="M14 27h20"/>',
+  brushes: '<path d="M14 4h4v18h-4zM13 22h6v5h-6zM13 27h6l1 13h-8z"/><path d="M30 4h4v20h-4zM29 24h6v4h-6zM29 28h6l-3 14z" opacity=".6"/>',
+  palette: '<path d="M24 6C12 6 5 14 6 24c1 10 10 17 20 16 4 0 4-4 2-6s-1-6 3-6h5c6 0 8-4 7-9-2-8-10-13-19-13z"/><circle cx="16" cy="18" r="2.5"/><circle cx="25" cy="13" r="2.5"/><circle cx="33" cy="18" r="2.5"/><circle cx="14" cy="28" r="2.5"/>',
+  bucket: '<path d="M7 16h15l-2 24H9zM26 16h15l-2 24H28z"/><path d="M9 23h11M28 23h11"/>',
+  sponge: '<rect x="8" y="16" width="32" height="18" rx="5"/><circle cx="16" cy="23" r="1.6"/><circle cx="26" cy="27" r="1.6"/><circle cx="33" cy="22" r="1.6"/><circle cx="20" cy="29" r="1.2"/>',
+  mister: '<path d="M18 21h12v19a2 2 0 01-2 2h-8a2 2 0 01-2-2z"/><path d="M20 21v-6h8v6M22 15v-5h10l4 3"/>',
+  liner: '<path d="M23 4h2v25h-2z"/><path d="M22 29h4l-2 15z"/>',
+  canvas: '<rect x="8" y="8" width="32" height="32"/><path d="M14 14h20v20H14zM8 8l6 6M40 8l-6 6M8 40l6-6M40 40l-6-6"/>',
+  can: '<path d="M14 13h20v29H14z"/><path d="M18 13V7h8v6M14 23h20"/>',
+  dropper: '<path d="M17 19h14v21a2 2 0 01-2 2H19a2 2 0 01-2-2z"/><path d="M20 19v-4h8v4M22 15V6h4v9"/><path d="M17 29h14" opacity=".5"/>',
+  pknife: '<path d="M8 41l5-5M13 36l6-8"/><path d="M19 28c3-9 11-17 21-20-2 9-11 17-21 20z"/>',
+  jar: '<path d="M14 11h20v5l-2 4v20H16V20l-2-4z"/><path d="M16 27h16M19 33h10" opacity=".6"/>',
+  rag: '<path d="M8 17c6-4 12 4 18 0s10-4 14 0v21c-4-4-8-4-14 0s-12-4-18 0z"/>',
+  gloves: '<path d="M16 42V22l-4-6 2-2 4 4V8h3v12h1V6h3v14h1V8h3v12h1v-8h3v18c0 6-4 12-10 12z"/>',
+  photo: '<rect x="8" y="10" width="32" height="28" rx="2"/><path d="M8 32l9-9 7 7 5-5 11 11"/><circle cx="31" cy="18" r="3"/>'
+};
+const PREP = {
+  sketch: {
+    size: '8 开素描纸', before: { still: ['静物摆在离你 2–3 米的地方，眼睛平视或略高于静物。', '台灯放在左上方，光只从一个方向来。', '画板正对着你，和视线大约垂直，纸夹平。'], land: ['把参考照片放在画板旁边，和画面差不多大最好。', '先眯起眼睛看照片，分清天空、远景、中景、近景。', '画板正对着你，纸夹平。'], head: ['石膏像放在离你 2–3 米的地方，用一盏灯从侧上方照亮。', '先绕着走一圈，选一个四分之三侧面的角度。', '画板正对着你，纸夹平。'] },
+    must: [
+      { id: 'pencils', icon: 'pencils', name: '素描铅笔', spec: '2H 到 8B，软硬都要有', label: 'pencils', use: 'H 前的数字越大，笔芯越硬越浅；B 前的数字越大，越软越黑。排线用 HB–2B，暗部用 4B–8B。', alt: '只有一支 HB？用力轻重也能分出深浅，暗部多叠几层就行。', opts: ['6 支基础套', '12 支全套', '加一支炭笔'] },
+      { id: 'paper', icon: 'paper', name: '素描纸', spec: '8 开，160g 以上，有纹理', label: 'easel', use: '纸面的纹理能“咬住”铅笔粉，排线才有颗粒感。8 开适合练习，4 开适合完整作业。', alt: '复印纸太滑，排线容易发亮。没有素描纸，可以用厚一点的水彩纸背面。', opts: ['白色素描纸', '米黄素描纸', '灰卡纸'], paper: ['#f3f0e8', '#efe4cc', '#c9c6bf'] },
+      { id: 'eraser', icon: 'eraser', name: '可塑橡皮', spec: '能捏、能压、能擦', label: 'eraser', use: '捏尖了提高光、擦反光，压平了能整片减淡，不伤纸面。', alt: '普通橡皮会擦伤纸面，只适合擦错；要提亮，还是可塑橡皮好用。' },
+      { id: 'cutter', icon: 'cutter', name: '美工刀', spec: '削出 1.5 厘米长的笔芯', label: 'knife', use: '用刀削出长长的笔芯，侧锋才能铺大面积的调子，笔尖用来刻细节。', alt: '卷笔刀削出的笔芯太短，侧锋铺不了大面，最好还是用刀削。' },
+      { id: 'board', icon: 'board', name: '画板和夹子', spec: '4 开画板，两个长尾夹', label: 'easel', use: '把纸夹平、立起来，眼睛才能同时看到静物和画面，比例不容易画歪。', alt: '没有画板？用一块硬纸板垫着，四个角贴上胶带。' }
+    ],
+    nice: [
+      { id: 'stump', icon: 'stump', name: '纸笔', spec: '揉出细腻过渡', use: '在灰面上轻轻揉，过渡更柔和，适合画石膏和皮肤。', alt: '纸巾卷成尖头也能用。别用手指揉，手上的油会把纸弄脏。' },
+      { id: 'spray', icon: 'spray', name: '定画液', spec: '画完喷一层', use: '把铅笔粉固定在纸上，画放久了、叠在一起也不会蹭花。', alt: '没有定画液，用发胶离远一点喷，效果差不多。' },
+      { id: 'easel', icon: 'easel', name: '画架', spec: '让画板立起来', label: 'easel', use: '画板立着，站远就能看整体，这是美术生的标配。', alt: '把画板靠在椅背上，也能立起来。' },
+      { id: 'sand', icon: 'sand', name: '砂纸板', spec: '把笔尖磨成斜面', use: '笔尖磨成斜面，侧锋排线更快更均匀。', alt: '一张细砂纸贴在硬纸板上，就是一块砂纸板。' }
+    ]
+  },
+  gouache: {
+    size: '8 开水粉纸', before: { still: ['静物摆在离你 2–3 米的地方，台灯放在左上方。', '颜料挤在调色盒边上，按冷暖排好，中间留出调色的地方。', '洗笔桶装好清水，一格洗笔，一格调色。'], land: ['把参考照片放在画板旁边。', '颜料按冷暖挤好，天空要用的蓝和白多挤一点。', '洗笔桶装好清水，一格洗笔，一格调色。'], head: ['模特或头像放在离你 2–3 米的地方，单一光源从侧上方照。', '肤色要用的土黄、朱红、钛白多挤一点。', '洗笔桶装好清水，一格洗笔，一格调色。'] },
+    must: [
+      { id: 'paints', icon: 'tube', name: '水粉颜料', spec: '12 色起步，钛白买大罐', label: 'tubes', use: '水粉是不透明的，浅色能盖住深色。钛白的用量是其他颜色的好几倍。', alt: '只有几种颜色？熟褐、群青、柠檬黄、朱红、钛白，这 5 个能调出大部分颜色。', opts: ['12 色', '24 色', '罐装'] },
+      { id: 'brushes', icon: 'brushes', name: '水粉笔', spec: '大中小号平头笔各一支', label: 'brushes', use: '大号铺背景，中号画物体，小号刻画细节。平头笔的笔触方方正正，最有水粉味。', alt: '没有大号笔？铺背景可以用 1 寸宽的油漆刷。', opts: ['尼龙笔', '狼毫混合笔'] },
+      { id: 'palette', icon: 'palette', name: '调色盒', spec: '带格子，能盖上保湿', label: 'palette', use: '格子里放颜料，盖上盖子能保湿好几天；盖子背面就是调色的地方。', alt: '一次性白色纸盘也可以。一定要白色的，才看得准颜色。' },
+      { id: 'paper', icon: 'paper', name: '水粉纸', spec: '8 开，吸水、不起毛', label: 'easel', use: '水粉纸厚、吸水，颜料一层层叠上去也不会起皱、起毛。', alt: '素描纸太薄，水一多就会起皱，最好别用。', opts: ['水粉纸', '白卡纸', '浅灰色卡纸'], paper: ['#efe8da', '#f7f5f0', '#cfccc4'] },
+      { id: 'bucket', icon: 'bucket', name: '洗笔桶', spec: '两格的最好', label: 'bucket', use: '一格洗笔，一格放干净的水用来调色，颜色才不会脏。', alt: '两个塑料杯就行。' }
+    ],
+    nice: [
+      { id: 'sponge', icon: 'sponge', name: '吸水海绵', spec: '控制笔上的水分', use: '洗完笔在海绵上一按，笔上的水量就刚刚好，颜色不会太稀。', alt: '叠起来的厚纸巾也可以。' },
+      { id: 'mister', icon: 'mister', name: '小喷壶', spec: '让颜料保持湿润', use: '调色盒里的颜料干了，喷一点水就能接着用。', alt: '用笔蘸水滴在颜料上。' },
+      { id: 'liner', icon: 'liner', name: '勾线笔', spec: '画高光和细节', use: '高光、果柄、瓶口这类小地方，用勾线笔点。', alt: '小号平头笔的笔尖侧过来，也能画细线。' },
+      { id: 'board', icon: 'board', name: '画板和夹子', spec: '4 开画板', label: 'easel', use: '纸夹平立起来，颜色干了也不容易卷边。', alt: '用胶带把纸四边贴在硬纸板上。' }
+    ]
+  },
+  oil: {
+    size: '40 × 50 cm 画布', before: { still: ['静物摆在离你 2–3 米的地方，台灯放在左上方。', '颜料按冷暖挤在调色板边上，钛白挤得最多。', '打开窗户通风，松节油的气味比较大。'], land: ['把参考照片放在画架旁边。', '颜料按冷暖挤在调色板边上，天空和麦田要用的颜色多挤一点。', '打开窗户通风，松节油的气味比较大。'], head: ['模特坐在侧光里，光从侧上方来。', '肤色要用的土黄、朱红、钛白多挤一点。', '打开窗户通风，松节油的气味比较大。'] },
+    must: [
+      { id: 'paints', icon: 'tube', name: '油画颜料', spec: '12 色套装，钛白单买大管', label: 'tubes', use: '油画颜料干得慢，可以在画布上反复调和、堆厚。钛白的用量是其他颜色的好几倍。', alt: '入门套装够用；之后哪个颜色用完，再单独补那一支。', opts: ['12 色套装', '18 色套装'] },
+      { id: 'brushes', icon: 'brushes', name: '猪鬃笔', spec: '平头、榛形、圆头，4–10 号', label: 'brushes', use: '猪鬃硬，能推得动浓稠的颜料，还会留下笔痕，这就是油画的笔触。', alt: '尼龙笔偏软，适合薄涂和细节；厚涂还是猪鬃好用。', opts: ['猪鬃笔', '尼龙笔'] },
+      { id: 'canvas', icon: 'canvas', name: '画布', spec: '40 × 50 cm，已经刷好底', label: 'easel', use: '画布已经刷好底料，颜料不会渗进布里。亚麻布纹理细，棉布便宜，适合练习。', alt: '没有画布？油画纸，或者刷过两层石膏底的硬纸板，也能画。', opts: ['亚麻画布', '棉布画布', '油画板'], paper: ['#d8c9ab', '#ece6d8', '#e8e2d4'], weave: [true, true, false] },
+      { id: 'palette', icon: 'palette', name: '调色板', spec: '木质或一次性调色纸', label: 'palette', use: '颜料沿着边挤一圈，中间调色。', alt: '玻璃板下面垫一张灰纸，是很好用的调色板。', opts: ['木调色板', '调色纸'] },
+      { id: 'pknife', icon: 'pknife', name: '刮刀', spec: '菱形刀头', label: 'knife', use: '调色、厚涂高光、刮掉画错的地方，都靠它。', alt: '没有刮刀，就只能用笔厚涂，效果会温和一些。' },
+      { id: 'turps', icon: 'can', name: '松节油', spec: '稀释颜料、洗笔', label: 'bottle', use: '第一层薄涂要用松节油把颜料调稀；画完用它洗笔。', alt: '怕气味，就用无味稀释剂。不管用哪种，都要开窗通风。' },
+      { id: 'medium', icon: 'dropper', name: '调色油', spec: '亚麻仁油或调色油', label: 'bottle', use: '让颜料更顺滑、更有光泽。越往上层加得越多，叫“肥盖瘦”，画干了才不会开裂。', alt: '纯亚麻仁油也可以，只是干得慢一点。' }
+    ],
+    nice: [
+      { id: 'jar', icon: 'jar', name: '洗笔罐', spec: '带滤网和盖子', use: '颜料渣会沉到底下，上面的松节油能反复用。', alt: '带盖的玻璃罐也行。' },
+      { id: 'rag', icon: 'rag', name: '棉布抹布', spec: '擦笔、擦画面', use: '洗完笔擦干，画错的地方也能直接擦掉。', alt: '旧 T 恤剪成小块。' },
+      { id: 'easel', icon: 'easel', name: '画架', spec: '让画布立起来', label: 'easel', use: '画布立着，退后几步就能看整体。', alt: '把画布靠在墙上或椅背上。' },
+      { id: 'gloves', icon: 'gloves', name: '一次性手套', spec: '保护双手', use: '有些颜料含有重金属，最好别直接沾手。', alt: '画完马上用肥皂洗手。' }
+    ]
+  }
+};
+const LEVEL_TIME = { 入门: '约 1 小时', 基础: '约 2 小时', 进阶: '约 3 小时', 挑战: '约 4 小时' };
+let PREPSEL = {};
+try { PREPSEL = JSON.parse(localStorage.getItem('studio-prep') || '{}'); } catch (e) {}
+const prepState = mk => (PREPSEL[mk] = PREPSEL[mk] || { have: {}, opt: {}, seen: false });
+const savePrep = () => { try { localStorage.setItem('studio-prep', JSON.stringify(PREPSEL)); } catch (e) {} };
+let prepOpenId = null;
+const prepIcon = k => `<svg viewBox="0 0 48 48" aria-hidden="true">${ICON[k]}</svg>`;
+function renderPrep() {
+  const def = rt.def, mk = def.mk, P = PREP[mk], st = prepState(mk), kind = def.kind === 'head' ? 'head' : def.kind === 'land' ? 'land' : 'still';
+  const card = it => {
+    const have = !!st.have[it.id], open = prepOpenId === it.id, oi = st.opt[it.id] ?? 0;
+    return `<div class="kit${have ? ' have' : ''}${open ? ' open' : ''}" data-id="${it.id}">
+      <button type="button" class="kit-main" data-act="open" aria-expanded="${open}"><span class="ico">${prepIcon(it.icon)}</span><span class="kit-t"><b>${it.name}</b><span class="spec">${it.opts ? it.opts[oi] + ' · ' : ''}${it.spec}</span></span></button>
+      <button type="button" class="chk" data-act="have" aria-pressed="${have}" aria-label="${have ? '取消勾选' : '我已经有了'}：${it.name}"><svg viewBox="0 0 24 24"><path d="M6 12.5l4 4 8-9"/></svg></button>
+      ${open ? `<div class="kit-more"><p>${it.use}</p>${it.opts ? `<div class="opts" role="group" aria-label="选择${it.name}">${it.opts.map((o, i) => `<button type="button" class="opt" data-act="opt" data-i="${i}" aria-pressed="${i === oi}">${it.paper ? `<i style="background:${it.paper[i]}"></i>` : ''}${o}</button>`).join('')}</div>` : ''}<p class="alt"><span>没有怎么办：</span>${it.alt}</p></div>` : ''}
+    </div>`;
+  };
+  const got = P.must.filter(it => st.have[it.id]).length;
+  $('prepBody').innerHTML = `
+    <div class="prep-eyebrow">开画之前 · ${def.medium} · ${def.name}</div>
+    <h2>准备画材</h2>
+    <p class="prep-sub">缺了哪样？点开卡片看替代办法。勾上你已经有的。</p>
+    <div class="prep-facts"><div><span class="fk">时间</span><span class="fv">${LEVEL_TIME[def.level] || '约 2 小时'}</span></div><div><span class="fk">画纸</span><span class="fv">${P.size}</span></div><div><span class="fk">难度</span><span class="fv">${def.level}</span></div></div>
+    <div class="prep-h3"><span>开画前先做好</span></div>
+    <ol class="prep-before">${P.before[kind].map(t => `<li>${t}</li>`).join('')}</ol>
+    <div class="prep-h3"><span>必备</span><span>${got} / ${P.must.length}</span></div>
+    <div class="kits">${P.must.map(card).join('')}</div>
+    <div class="prep-h3"><span>有更好</span></div>
+    <div class="kits">${P.nice.map(card).join('')}</div>`;
+  $('prepCount').textContent = got === P.must.length ? '必备画材都齐了' : `必备画材 ${got} / ${P.must.length}`;
+  $('prepBar').style.width = (got / P.must.length * 100) + '%';
+  $('prepGo').textContent = got === P.must.length ? '准备好了，开始画' : '先看看怎么画';
+}
+function prepFocus(id) {
+  const it = id && [...PREP[MK()].must, ...PREP[MK()].nice].find(x => x.id === id), ids = new Set([...PREP[MK()].must, ...PREP[MK()].nice].map(x => x.label).filter(Boolean));
+  for (const l of labels) { const on = !!it && it.label === l.id; l.el.classList.toggle('on', on); l.show = ids.has(l.id) || on; }
+}
+function openPrep() {
+  if (S.paint) exitPaint(true);
+  setPlaying(false); S.prep = true; prepOpenId = null;
+  if (S.step !== 0) goStep(0, false);
+  setView('room'); setCam(innerWidth > 760 ? 'prep' : 'tools');
+  $('prep').hidden = false; document.body.classList.add('prepping'); $('prepBtn').setAttribute('aria-pressed', 'true');
+  renderPrep(); prepFocus(null); $('prepBody').scrollTop = 0;
+}
+function closePrep(start) {
+  S.prep = false; $('prep').hidden = true; document.body.classList.remove('prepping'); $('prepBtn').setAttribute('aria-pressed', 'false');
+  prepState(MK()).seen = true; savePrep(); buildPaintTools();
+  if (start) goStep(1, true); else updateUI();
+}
+$('prepBody').addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = b.closest('.kit').dataset.id, st = prepState(MK());
+  if (b.dataset.act === 'open') { prepOpenId = prepOpenId === id ? null : id; prepFocus(prepOpenId); }
+  else if (b.dataset.act === 'have') { st.have[id] = !st.have[id]; savePrep(); }
+  else if (b.dataset.act === 'opt') { st.opt[id] = +b.dataset.i; st.have[id] = true; savePrep(); }
+  renderPrep();
+  const el = $('prepBody').querySelector(`.kit[data-id="${id}"] [data-act="${b.dataset.act}"]${b.dataset.act === 'opt' ? `[data-i="${b.dataset.i}"]` : ''}`); if (el) el.focus();
+});
+$('prepGo').onclick = () => closePrep(true);
+$('stepText').addEventListener('click', e => { if (e.target.closest('[data-prep]')) openPrep(); });
+$('prepSkip').onclick = () => closePrep(true);
+$('prepClose').onclick = () => closePrep(false);
+$('prepBtn').onclick = () => S.prep ? closePrep(false) : openPrep();
+// 自己画用的纸：按准备页里选的纸
+const PAPER_CACHE = {};
+function chosenPaper() {
+  const mk = MK(), it = PREP[mk].must.find(x => x.paper), i = prepState(mk).opt[it.id] ?? 0, key = mk + i;
+  return PAPER_CACHE[key] || (PAPER_CACHE[key] = makePaper(it.paper[i], 101 + i, it.weave ? it.weave[i] : false));
+}
+// 自己画用的笔和颜色：按准备页里选的套装
+const EXTRA_TOOLS = {
+  sketch: { 1: [{ id: '6H', c: '#a29d97', a: .18, w: 1, at: 0 }, { id: '2B', c: '#45413d', a: .38, w: 2, at: 3 }, { id: '6B', c: '#24221f', a: .5, w: 3, at: 5 }], 2: [{ id: '炭笔', c: '#141210', a: .7, w: 4.6, at: 4 }] },
+  gouache: { 1: [['中绿', '#3f8a4a'], ['天蓝', '#5aa0d8'], ['玫红', '#c8306a'], ['赭石', '#9a5a2a']].map(([n, c]) => ({ id: n, sw: c, at: -1 })) },
+  oil: { 1: [['土绿', '#6a7a4a'], ['镉橙', '#e8742a'], ['茜素红', '#8a1a3a'], ['普蓝', '#1f2a4a']].map(([n, c]) => ({ id: n, sw: c, at: -1 })) }
+};
+function toolsFor(mk) {
+  const base = PAINT_TOOLS[mk].slice(), key = mk === 'sketch' ? 'pencils' : 'paints', extra = (EXTRA_TOOLS[mk] || {})[prepState(mk).opt[key] ?? 0] || [];
+  for (const t of extra) { const at = t.at >= 0 ? t.at : base.findIndex(x => x.erase || x.knife); base.splice(at < 0 ? base.length : at, 0, t); }
+  return base;
+}
+
 let toastT = 0;
 function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 2600); }
 
@@ -2368,6 +2612,6 @@ function loop(now) {
 swapPiece('sketch');
 setCam('overview', true);
 resize();
-goStep(1, true);
+if (prepState('sketch').seen) goStep(1, true); else openPrep();
 requestAnimationFrame(loop);
 </script>
