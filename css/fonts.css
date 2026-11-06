@@ -1,0 +1,8 @@
+/* 本地字体：只包含画室里用到的字，由 tools/subset_fonts.py 生成。新增文字后重新运行它 */
+@font-face{font-family:"Noto Sans SC";font-weight:400;font-display:swap;src:url(../fonts/NotoSansSC-400.woff2) format("woff2")}
+@font-face{font-family:"Noto Sans SC";font-weight:500;font-display:swap;src:url(../fonts/NotoSansSC-500.woff2) format("woff2")}
+@font-face{font-family:"Noto Sans SC";font-weight:700;font-display:swap;src:url(../fonts/NotoSansSC-700.woff2) format("woff2")}
+@font-face{font-family:"Noto Serif SC";font-weight:700;font-display:swap;src:url(../fonts/NotoSerifSC-700.woff2) format("woff2")}
+@font-face{font-family:"Noto Serif SC";font-weight:900;font-display:swap;src:url(../fonts/NotoSerifSC-900.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:500;font-display:swap;src:url(../fonts/JetBrainsMono-500.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:700;font-display:swap;src:url(../fonts/JetBrainsMono-700.woff2) format("woff2")}

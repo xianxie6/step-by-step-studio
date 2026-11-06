@@ -39,4 +39,29 @@
 
 ## 技术
 
-单个 `index.html`，用 [three.js](https://threejs.org/) 渲染画室。静物和头像用距离场搭出来，从画家的视角做光线步进，算出每个像素的明暗、投影和高光，再按画种的步骤用 Canvas 一笔笔画出来；风景是分层的程序画面。没有任何图片素材。直接用浏览器打开 `index.html` 也能运行（需要联网加载 three.js 和字体）。
+用 [three.js](https://threejs.org/) 渲染画室。静物和头像用距离场搭出来，从画家的视角做光线步进，算出每个像素的明暗、投影和高光，再按画种的步骤用 Canvas 一笔笔画出来；风景是分层的程序画面。没有任何图片素材，也不需要联网：three.js 和字体都在仓库里，直接双击 `index.html` 就能打开。
+
+学习进度（学到哪课哪步、哪些课学完了）、画材选择和面板收起状态存在浏览器本地。
+
+## 目录
+
+```
+index.html              页面结构
+css/studio.css          界面样式
+css/fonts.css           本地字体
+fonts/                  只含画室用字的字体，由 tools/subset_fonts.py 生成
+vendor/three/           three.js 0.160.0 + OrbitControls，打成一个普通脚本
+js/core/                引擎：工具函数、2D 笔触、距离场与光线步进、画稿缓存
+js/lessons/             课程内容：三节入门课、风景参考照片、各画种课程、课程登记
+js/room/studio3d.js     3D 画室
+js/app/                 界面、自己动手画、事件、准备画材、渲染循环
+tools/subset_fonts.py   课程里加了新字之后，运行它重新裁剪字体
+```
+
+所有脚本都是普通脚本，按 `index.html` 里的顺序执行，共用同一个全局作用域，所以没有打包步骤，也能从本地文件直接打开。顺序就是依赖关系：引擎 → 课程 → 画室 → 界面。
+
+### 加一节新课
+
+1. 在 `js/lessons/sketch.js`（或 `gouache.js`、`oil.js`）的 `LESSON_SPECS.push(...)` 里加一个课程对象，照着同文件里的课写。
+2. 在 `js/lessons/registry.js` 的 `COURSES` 里把它的 `key` 排进对应画种。
+3. 课程文字里有新的字，运行 `python3 tools/subset_fonts.py`。
